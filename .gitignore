@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+data/*.sqlite3
+data/*.sqlite3-*
+
+*.pdf
+uploads/
+imports/
+
+/Задача/

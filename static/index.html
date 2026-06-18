@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Anastasia Che Time Tracker</title>
+    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <button class="brand-link" data-view="tracker" aria-label="Открыть трекер">
+          <img class="brand" src="/static/assets/logo-horizontal.svg" alt="Anastasia Che">
+        </button>
+        <nav>
+          <button class="nav-item active" data-view="tracker"><i class="fa-solid fa-clock"></i><span>Трекер</span></button>
+          <button class="nav-item" data-view="reports"><i class="fa-solid fa-table-list"></i><span>Отчеты</span></button>
+          <button class="nav-item" data-view="clients"><i class="fa-solid fa-address-book"></i><span>Клиенты</span></button>
+          <button class="nav-item" data-view="projects"><i class="fa-solid fa-diagram-project"></i><span>Проекты</span></button>
+          <button class="nav-item" data-view="dashboard"><i class="fa-solid fa-chart-simple"></i><span>Дашборд</span></button>
+        </nav>
+      </aside>
+
+      <main class="shell">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">персональный учет времени</p>
+            <h1 id="viewTitle">Трекер</h1>
+          </div>
+          <button id="timerButton" class="timer-button">
+            <i id="timerIcon" class="fa-solid fa-play"></i>
+            <span id="timerLabel">Старт</span>
+            <strong id="timerClock">00:00:00</strong>
+          </button>
+        </header>
+
+        <section id="tracker" class="view active-view">
+          <div class="workbench">
+            <div class="panel primary-panel">
+              <div class="panel-head">
+                <h2>Быстрый старт</h2>
+                <button class="ghost" id="openEntry"><i class="fa-solid fa-plus"></i> Добавить запись</button>
+              </div>
+              <div class="current-box">
+                <p id="runningStatus">Счетчик остановлен</p>
+                <span id="runningMeta">Нажми «Старт», детали можно заполнить уже после запуска.</span>
+              </div>
+            </div>
+            <div class="panel">
+              <h2>Сегодня</h2>
+              <div class="metric-row">
+                <span>Часы</span>
+                <strong id="todayDuration">00:00:00</strong>
+              </div>
+              <div class="metric-row">
+                <span>Записей</span>
+                <strong id="todayCount">0</strong>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Последние записи</h2>
+              <button class="ghost" data-view-jump="reports">Все отчеты</button>
+            </div>
+            <div id="recentEntries" class="entry-list"></div>
+          </div>
+        </section>
+
+        <section id="reports" class="view">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Фильтр</h2>
+              <div class="actions">
+                <button id="periodMonth" class="ghost">Этот месяц</button>
+                <button id="periodPrevMonth" class="ghost">Прошлый</button>
+                <button id="periodYear" class="ghost">С начала года</button>
+              </div>
+            </div>
+            <div class="filters">
+              <label>Дата от <input id="filterFrom" type="date"></label>
+              <label>Дата до <input id="filterTo" type="date"></label>
+              <label>Клиент <select id="filterClient"></select></label>
+              <label>Проект <select id="filterProject"></select></label>
+            </div>
+            <div class="filter-tags">
+              <span class="filter-label">Теги</span>
+              <div id="tagFilters" class="tag-filters"></div>
+            </div>
+            <div class="actions">
+              <button id="applyFilters">Применить</button>
+              <button id="resetFilters" class="secondary">Сбросить</button>
+                <button id="exportPdf" class="secondary"><i class="fa-solid fa-file-pdf"></i> Экспорт PDF</button>
+                <label class="file-button"><i class="fa-solid fa-file-import"></i> Импорт PDF <input id="importPdf" type="file" accept="application/pdf"></label>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="metric-card"><span>Всего часов</span><strong id="totalDuration">00:00:00</strong></div>
+            <div class="metric-card"><span>К оплате</span><strong id="totalAmount">0.00</strong></div>
+          </div>
+
+          <div class="panel table-panel">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Клиент</th>
+                    <th>Проект</th>
+                    <th>Комментарий</th>
+                    <th>Время</th>
+                    <th>Длительность</th>
+                    <th>Сумма</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="entriesTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="clients" class="view">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Клиенты</h2>
+              <button id="addClient"><i class="fa-solid fa-plus"></i> Клиент</button>
+            </div>
+            <div id="clientsList" class="cards-grid"></div>
+          </div>
+        </section>
+
+        <section id="projects" class="view">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Проекты</h2>
+              <button id="addProject"><i class="fa-solid fa-plus"></i> Проект</button>
+            </div>
+            <div id="projectsList" class="cards-grid"></div>
+          </div>
+        </section>
+
+        <section id="dashboard" class="view">
+          <div class="summary-grid">
+            <div class="metric-card"><span>Клиентов</span><strong id="dashClients">0</strong></div>
+            <div class="metric-card"><span>Проектов</span><strong id="dashProjects">0</strong></div>
+            <div class="metric-card"><span>Записей</span><strong id="dashEntries">0</strong></div>
+          </div>
+          <div class="panel"><h2>Дашборд</h2><p class="muted">Пока только базовые показатели. Графики можно нарастить, когда появятся реальные данные.</p></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="entryDialog">
+      <form method="dialog" class="modal-form" id="entryForm">
+        <h2 id="entryDialogTitle">Time entry</h2>
+        <input type="hidden" id="entryId">
+        <div class="form-grid">
+          <label>Клиент <select id="entryClient" required></select></label>
+          <label>Проект <select id="entryProject" required></select></label>
+          <label class="wide">Комментарий <input id="entryDescription" type="text" placeholder="Что делала"></label>
+          <label class="wide">Теги <input id="entryTags" type="text" list="tagSuggestions" placeholder="strategy, ux, design"></label>
+          <label>Начало <input id="entryStart" type="datetime-local" required></label>
+          <label>Конец <input id="entryEnd" type="datetime-local" required></label>
+        </div>
+        <datalist id="tagSuggestions"></datalist>
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close>Отмена</button>
+          <button type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="clientDialog">
+      <form method="dialog" class="modal-form" id="clientForm">
+        <h2>Клиент</h2>
+        <input type="hidden" id="clientId">
+        <label>Название <input id="clientName" required></label>
+        <label>Контактное лицо <input id="clientContact"></label>
+        <label>Email <input id="clientEmail" type="email"></label>
+        <label>Валюта <select id="clientCurrency"></select></label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close>Отмена</button>
+          <button type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="projectDialog">
+      <form method="dialog" class="modal-form" id="projectForm">
+        <h2>Проект</h2>
+        <input type="hidden" id="projectId">
+        <label>Клиент <select id="projectClient" required></select></label>
+        <label>Название <input id="projectName" required></label>
+        <label>Ставка в час <input id="projectRate" type="number" step="0.01" min="0" value="0"></label>
+        <label>Валюта <select id="projectCurrency"></select></label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close>Отмена</button>
+          <button type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
