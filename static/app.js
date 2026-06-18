@@ -22,6 +22,13 @@ const toDateInput = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}
 const today = () => toDateInput(new Date());
 const FILTER_KEYS = ["from", "to", "client_id", "project_id", "tags"];
 
+function ensureEndAfterStart(startAt, endDate = new Date()) {
+  const start = new Date(startAt);
+  const end = new Date(endDate);
+  if (end <= start) end.setTime(start.getTime() + 60000);
+  return toLocalInput(end);
+}
+
 function durationFromSeconds(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
   const h = Math.floor(seconds / 3600);
@@ -424,14 +431,23 @@ function startTimer(defaults = {}) {
 async function stopTimer() {
   const running = state.running;
   if (!running) return;
-  state.running = null;
-  localStorage.removeItem("runningTimer");
-  const end = toLocalInput(new Date());
-  await api("/api/entries", {
-    method: "POST",
-    body: JSON.stringify({ ...running, end_at: end }),
-  });
-  await loadState();
+  const end = ensureEndAfterStart(running.start_at);
+  const payload = { ...running, end_at: end };
+  try {
+    await api("/api/entries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    state.running = null;
+    localStorage.removeItem("runningTimer");
+    await loadState();
+  } catch (error) {
+    state.running = running;
+    localStorage.setItem("runningTimer", JSON.stringify(running));
+    renderTimer();
+    openEntryDialog(null, payload);
+    alert(`${error.message}. Я вернул таймер, заполни детали и сохрани запись.`);
+  }
 }
 
 function collectFilters() {

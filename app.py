@@ -273,6 +273,12 @@ def format_print_period(query: dict[str, list[str]]) -> str:
     return f"{start} — {end}"
 
 
+def print_report_title(query: dict[str, list[str]]) -> str:
+    start = query.get("from", [""])[0] or "start"
+    end = query.get("to", [""])[0] or "end"
+    return f"{start}_{end}_Detailed_Report"
+
+
 def report_amounts(total: dict) -> str:
     return ", ".join(f"{value} {CURRENCIES.get(cur, cur)}" for cur, value in total["amounts"].items()) or "0,00"
 
@@ -282,14 +288,14 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
     amount_total = report_amounts(total)
     currencies = list(total["amounts"].keys())
     amount_header = f"Amount, {pdf_currency(currencies[0])}" if len(currencies) == 1 else "Amount"
-    rows = []
+    entry_rows = []
     for index, entry in enumerate(entries):
-        cross = f" +{entry['cross_day']}" if entry["cross_day"] else ""
+        cross = f"<sup>+{entry['cross_day']}</sup>" if entry["cross_day"] else ""
         row_class = ' class="alt"' if index % 2 else ""
-        rows.append(
+        entry_rows.append(
             f"""
             <tr{row_class}>
-              <td>{html.escape(entry["date"] + cross)}</td>
+              <td>{html.escape(entry["date"])}{cross}</td>
               <td>{html.escape(entry["client_name"])}</td>
               <td>{html.escape(entry["project_name"])}</td>
               <td>{html.escape(entry["description"] or "")}</td>
@@ -299,13 +305,96 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
             </tr>
             """
         )
-    rows_html = "\n".join(rows) or '<tr><td colspan="7" class="empty">No entries</td></tr>'
+
+    def chunk_rows(rows: list[str]) -> list[list[str]]:
+        if not rows:
+            return [[]]
+        chunks = []
+        remaining = rows
+        while remaining:
+            chunks.append(remaining[:10])
+            remaining = remaining[10:]
+        return chunks
+
+    row_pages = chunk_rows(entry_rows)
+    page_count = len(row_pages)
+
+    def table_html(page_rows: list[str], is_last_page: bool) -> str:
+        rows_html = "\n".join(page_rows) if page_rows else '<tr><td colspan="7" class="empty">No entries</td></tr>'
+        total_row = (
+            f"""
+        <tfoot>
+          <tr>
+            <td class="total-label" colspan="5">Total</td>
+            <td class="total-duration">{html.escape(total["duration"])}</td>
+            <td class="total-amount">{html.escape(amount_total)}</td>
+          </tr>
+        </tfoot>
+            """
+            if is_last_page
+            else ""
+        )
+        return f"""
+      <table>
+        <colgroup>
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 24.07%">
+          <col style="width: 11.36%">
+          <col style="width: 20.45%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Comment</th>
+            <th>Time</th>
+            <th>Duration</th>
+            <th>{html.escape(amount_header)}</th>
+          </tr>
+        </thead>
+        <tbody>{rows_html}</tbody>
+        {total_row}
+      </table>
+        """
+
+    def sheet_html(page_index: int, page_rows: list[str]) -> str:
+        report_head = ""
+        if page_index == 0:
+            report_head = f"""
+      <header class="report-head">
+        <div class="report-overview">
+          <h1>Detailed report</h1>
+          <p class="period">{html.escape(format_print_period(query))}</p>
+          <div class="totals">
+            <span>Total:</span>
+            <strong>{html.escape(total["duration"])}</strong>
+            <strong>{html.escape(amount_total)}</strong>
+          </div>
+        </div>
+        <img class="logo" src="/static/assets/logo-vertical.svg" alt="Anastasia Che Design">
+      </header>
+            """
+        return f"""
+    <main class="sheet">
+      <section class="sheet-content">
+        {report_head}
+        {table_html(page_rows, page_index == page_count - 1)}
+      </section>
+      <div class="page-number">Page {page_index + 1}/{page_count}</div>
+    </main>
+        """
+
+    sheets_html = "\n".join(sheet_html(index, page_rows) for index, page_rows in enumerate(row_pages))
     return f"""<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Detailed report</title>
+    <title>{html.escape(print_report_title(query))}</title>
     <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <style>
       @page {{ size: A4; margin: 0; }}
@@ -319,11 +408,15 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
       }}
       .sheet {{
         width: 210mm;
-        min-height: 297mm;
+        height: 297mm;
         margin: 0 auto;
-        position: relative;
         padding: 15mm;
         background: #fff;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+      }}
+      .sheet + .sheet {{
+        margin-top: 8mm;
       }}
       .report-head {{
         display: flex;
@@ -375,8 +468,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
         vertical-align: middle;
       }}
       th {{
-        height: 5.1mm;
-        padding: 0 1mm;
+        padding: 10px;
         background: #000;
         color: #fff;
         font-weight: 400;
@@ -384,8 +476,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
         line-height: 1;
       }}
       td {{
-        height: 5.8mm;
-        padding: 0 1mm;
+        padding: 10px;
         color: #000;
         font-weight: 400;
         font-size: 8.5pt;
@@ -406,12 +497,21 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
         text-align: left;
       }}
       tfoot td {{
-        height: 5.8mm;
         background: #000;
         color: #fff;
         font-weight: 700;
         font-size: 8.5pt;
         line-height: 1;
+      }}
+      tfoot td.total-label,
+      tfoot td.total-duration,
+      tfoot td.total-amount {{
+        text-align: right;
+      }}
+      sup {{
+        font-size: 6pt;
+        line-height: 0;
+        vertical-align: super;
       }}
       .empty {{
         height: 22mm;
@@ -420,10 +520,9 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
         vertical-align: middle;
       }}
       .page-number {{
-        position: absolute;
-        right: 15.6mm;
-        bottom: 7.4mm;
-        width: 12.4mm;
+        justify-self: end;
+        align-self: end;
+        width: 20mm;
         color: #000;
         font-size: 8.5pt;
         font-weight: 400;
@@ -449,6 +548,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
       @media print {{
         body {{ background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
         .sheet {{ margin: 0; }}
+        .sheet + .sheet {{ margin-top: 0; }}
         .print-actions {{ display: none; }}
       }}
     </style>
@@ -458,51 +558,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
       <button onclick="window.print()">Печать</button>
       <button onclick="window.close()">Закрыть</button>
     </div>
-    <main class="sheet">
-      <header class="report-head">
-        <div class="report-overview">
-          <h1>Detailed report</h1>
-          <p class="period">{html.escape(format_print_period(query))}</p>
-          <div class="totals">
-            <span>Total:</span>
-            <strong>{html.escape(total["duration"])}</strong>
-            <strong>{html.escape(amount_total)}</strong>
-          </div>
-        </div>
-        <img class="logo" src="/static/assets/logo-vertical.svg" alt="Anastasia Che Design">
-      </header>
-      <table>
-        <colgroup>
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 24.07%">
-          <col style="width: 11.36%">
-          <col style="width: 20.45%">
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Client</th>
-            <th>Project</th>
-            <th>Comment</th>
-            <th>Time</th>
-            <th>Duration</th>
-            <th>{html.escape(amount_header)}</th>
-          </tr>
-        </thead>
-        <tbody>{rows_html}</tbody>
-        <tfoot>
-          <tr>
-            <td colspan="5">Total</td>
-            <td>{html.escape(total["duration"])}</td>
-            <td>{html.escape(amount_total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div class="page-number">Page 1/1</div>
-    </main>
+    {sheets_html}
   </body>
 </html>"""
 
