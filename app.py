@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import cgi
+import html
 import json
 import re
 import sqlite3
@@ -118,8 +119,12 @@ def format_duration(seconds: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def money(value: Decimal) -> str:
+def money_raw(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def money(value: Decimal) -> str:
+    return money_raw(value).replace(".", ",")
 
 
 def pdf_currency(currency: str) -> str:
@@ -153,6 +158,7 @@ def entry_select(where: str = "", params: tuple = ()) -> list[dict]:
         row["timerange"] = f"{start:%H:%M:%S} - {end:%H:%M:%S}"
         row["cross_day"] = (end.date() - start.date()).days
         row["date"] = f"{start:%Y-%m-%d}"
+        row["amount_value"] = money_raw(amount)
         row["amount"] = money(amount)
         row["currency_symbol"] = CURRENCIES.get(row["client_currency"], row["client_currency"])
     return rows
@@ -172,6 +178,15 @@ def send_json(handler: SimpleHTTPRequestHandler, payload: object, status: int = 
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def send_html(handler: SimpleHTTPRequestHandler, body: str, status: int = 200) -> None:
+    payload = body.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Content-Length", str(len(payload)))
+    handler.end_headers()
+    handler.wfile.write(payload)
 
 
 def bad_request(handler: SimpleHTTPRequestHandler, message: str, status: int = 400) -> None:
@@ -224,12 +239,19 @@ def filtered_entries(query: dict[str, list[str]]) -> list[dict]:
     if query.get("project_id") and query["project_id"][0]:
         clauses.append("te.project_id = ?")
         params.append(query["project_id"][0])
-    tag_values = [tag for raw in query.get("tags", []) for tag in raw.split(",") if tag.strip()]
-    for tag in tag_values:
-        clauses.append("LOWER(te.tags) LIKE ?")
-        params.append(f"%{tag.strip().lower()}%")
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    return entry_select(where, tuple(params))
+    entries = entry_select(where, tuple(params))
+    tag_values = [tag.strip().casefold() for raw in query.get("tags", []) for tag in raw.split(",") if tag.strip()]
+    if not tag_values:
+        return entries
+    return [
+        entry
+        for entry in entries
+        if all(
+            tag in {part.strip().casefold() for part in (entry.get("tags") or "").split(",") if part.strip()}
+            for tag in tag_values
+        )
+    ]
 
 
 def totals(entries: list[dict]) -> dict:
@@ -237,12 +259,252 @@ def totals(entries: list[dict]) -> dict:
     by_currency: dict[str, Decimal] = {}
     for entry in entries:
         cur = entry["client_currency"]
-        by_currency[cur] = by_currency.get(cur, Decimal("0")) + Decimal(entry["amount"])
+        by_currency[cur] = by_currency.get(cur, Decimal("0")) + Decimal(entry.get("amount_value") or str(entry["amount"]).replace(",", "."))
     return {
         "seconds": seconds,
         "duration": format_duration(seconds),
         "amounts": {cur: money(value) for cur, value in by_currency.items()},
     }
+
+
+def format_print_period(query: dict[str, list[str]]) -> str:
+    start = query.get("from", [""])[0] or "..."
+    end = query.get("to", [""])[0] or "..."
+    return f"{start} — {end}"
+
+
+def report_amounts(total: dict) -> str:
+    return ", ".join(f"{value} {CURRENCIES.get(cur, cur)}" for cur, value in total["amounts"].items()) or "0,00"
+
+
+def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
+    total = totals(entries)
+    amount_total = report_amounts(total)
+    currencies = list(total["amounts"].keys())
+    amount_header = f"Amount, {pdf_currency(currencies[0])}" if len(currencies) == 1 else "Amount"
+    rows = []
+    for index, entry in enumerate(entries):
+        cross = f" +{entry['cross_day']}" if entry["cross_day"] else ""
+        row_class = ' class="alt"' if index % 2 else ""
+        rows.append(
+            f"""
+            <tr{row_class}>
+              <td>{html.escape(entry["date"] + cross)}</td>
+              <td>{html.escape(entry["client_name"])}</td>
+              <td>{html.escape(entry["project_name"])}</td>
+              <td>{html.escape(entry["description"] or "")}</td>
+              <td>{html.escape(entry["timerange"].replace(" - ", " — "))}</td>
+              <td>{html.escape(entry["duration"])}</td>
+              <td>{html.escape(entry["amount"])}</td>
+            </tr>
+            """
+        )
+    rows_html = "\n".join(rows) or '<tr><td colspan="7" class="empty">No entries</td></tr>'
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Detailed report</title>
+    <link rel="icon" type="image/png" href="/static/assets/favicon.png">
+    <style>
+      @page {{ size: A4; margin: 0; }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        background: #eefafa;
+        color: #000;
+        font-family: Mulish, Arial, Helvetica, sans-serif;
+        font-size: 8.5pt;
+      }}
+      .sheet {{
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        position: relative;
+        padding: 15mm;
+        background: #fff;
+      }}
+      .report-head {{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        width: 180mm;
+        min-height: 37.5mm;
+        margin-bottom: 10mm;
+      }}
+      .report-overview {{ width: 110mm; }}
+      h1 {{
+        margin: 0 0 6.2mm;
+        font-size: 28.3pt;
+        line-height: 1;
+        font-weight: 400;
+      }}
+      .period {{
+        margin: 0 0 6.1mm;
+        color: #8b8b8b;
+        font-size: 14.2pt;
+        line-height: 1;
+        font-weight: 400;
+      }}
+      .totals {{
+        display: flex;
+        gap: 4mm;
+        align-items: baseline;
+        color: #000;
+        font-size: 14.2pt;
+        line-height: 1;
+        font-weight: 700;
+        white-space: nowrap;
+      }}
+      .totals span {{ font-weight: 400; }}
+      .logo {{
+        width: 56mm;
+        height: 37.6mm;
+        object-fit: contain;
+        object-position: right top;
+      }}
+      table {{
+        width: 180mm;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }}
+      th, td {{
+        border: 0;
+        overflow-wrap: anywhere;
+        vertical-align: middle;
+      }}
+      th {{
+        height: 5.1mm;
+        padding: 0 1mm;
+        background: #000;
+        color: #fff;
+        font-weight: 400;
+        font-size: 7.1pt;
+        line-height: 1;
+      }}
+      td {{
+        height: 5.8mm;
+        padding: 0 1mm;
+        color: #000;
+        font-weight: 400;
+        font-size: 8.5pt;
+        line-height: 1;
+      }}
+      tbody tr.alt td {{
+        background: #f1f1f1;
+      }}
+      th:nth-child(1), td:nth-child(1),
+      th:nth-child(5), td:nth-child(5),
+      th:nth-child(6), td:nth-child(6),
+      th:nth-child(7), td:nth-child(7) {{
+        text-align: right;
+      }}
+      th:nth-child(2), td:nth-child(2),
+      th:nth-child(3), td:nth-child(3),
+      th:nth-child(4), td:nth-child(4) {{
+        text-align: left;
+      }}
+      tfoot td {{
+        height: 5.8mm;
+        background: #000;
+        color: #fff;
+        font-weight: 700;
+        font-size: 8.5pt;
+        line-height: 1;
+      }}
+      .empty {{
+        height: 22mm;
+        color: #777;
+        text-align: center;
+        vertical-align: middle;
+      }}
+      .page-number {{
+        position: absolute;
+        right: 15.6mm;
+        bottom: 7.4mm;
+        width: 12.4mm;
+        color: #000;
+        font-size: 8.5pt;
+        font-weight: 400;
+        line-height: 1;
+        text-align: right;
+      }}
+      .print-actions {{
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        gap: 8px;
+      }}
+      .print-actions button {{
+        min-height: 36px;
+        border: 1px solid #111;
+        border-radius: 4px;
+        background: #111;
+        color: #fff;
+        padding: 0 14px;
+        cursor: pointer;
+      }}
+      @media print {{
+        body {{ background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+        .sheet {{ margin: 0; }}
+        .print-actions {{ display: none; }}
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="print-actions">
+      <button onclick="window.print()">Печать</button>
+      <button onclick="window.close()">Закрыть</button>
+    </div>
+    <main class="sheet">
+      <header class="report-head">
+        <div class="report-overview">
+          <h1>Detailed report</h1>
+          <p class="period">{html.escape(format_print_period(query))}</p>
+          <div class="totals">
+            <span>Total:</span>
+            <strong>{html.escape(total["duration"])}</strong>
+            <strong>{html.escape(amount_total)}</strong>
+          </div>
+        </div>
+        <img class="logo" src="/static/assets/logo-vertical.svg" alt="Anastasia Che Design">
+      </header>
+      <table>
+        <colgroup>
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 11.36%">
+          <col style="width: 24.07%">
+          <col style="width: 11.36%">
+          <col style="width: 20.45%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Comment</th>
+            <th>Time</th>
+            <th>Duration</th>
+            <th>{html.escape(amount_header)}</th>
+          </tr>
+        </thead>
+        <tbody>{rows_html}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5">Total</td>
+            <td>{html.escape(total["duration"])}</td>
+            <td>{html.escape(amount_total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="page-number">Page 1/1</div>
+    </main>
+  </body>
+</html>"""
 
 
 def upsert_client(conn: sqlite3.Connection, name: str, currency: str = "RUB") -> int:
@@ -706,6 +968,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(pdf)
                 return
+            if path == "/print-report":
+                entries = filtered_entries(query)
+                return send_html(self, build_print_report(entries, query))
             return super().do_GET()
         except Exception as exc:
             bad_request(self, str(exc), 500)

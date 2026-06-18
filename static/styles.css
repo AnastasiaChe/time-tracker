@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-select {
+select,
+.file-button {
   font: inherit;
 }
 
@@ -41,11 +42,13 @@ button {
 }
 
 button,
-.file-button {
+.file-button,
+.button-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  text-decoration: none;
 }
 
 button:hover {
@@ -54,7 +57,8 @@ button:hover {
 }
 
 button.secondary,
-button.ghost {
+button.ghost,
+.button-link.secondary {
   background: #fff;
   color: var(--blue-dark);
   border-color: var(--line);
@@ -260,6 +264,11 @@ h2 {
   align-items: center;
 }
 
+.inline-form {
+  display: inline-flex;
+  margin: 0;
+}
+
 .current-box {
   border: 1px dashed var(--line);
   border-radius: 6px;
@@ -307,7 +316,7 @@ h2 {
 .filters,
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -320,22 +329,61 @@ h2 {
   grid-column: 1 / -1;
 }
 
-.tag-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0 14px;
+.tag-select {
+  position: relative;
+  width: 100%;
 }
 
-.filter-tags {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 14px;
+.tag-select summary {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 28px 8px 9px;
+  color: var(--text);
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  list-style: none;
 }
 
-.filter-label {
+.tag-select summary::-webkit-details-marker {
+  display: none;
+}
+
+.tag-select summary::after {
+  content: "\f078";
+  position: absolute;
+  right: 10px;
+  top: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-family: "Font Awesome 6 Free";
+  font-size: 11px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.tag-select[open] summary::after {
+  content: "\f077";
+}
+
+.tag-filters {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: var(--shadow);
 }
 
 .tag-filters label {
@@ -343,12 +391,13 @@ h2 {
   grid-template-columns: none;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
+  min-height: 28px;
+  padding: 3px 4px;
+  border: 0;
   border-radius: 4px;
   background: #fff;
   color: var(--text);
+  font-size: 13px;
 }
 
 .tag-filters input {
@@ -368,7 +417,7 @@ h2 {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 960px;
+  min-width: 760px;
 }
 
 th,
@@ -483,7 +532,8 @@ dialog::backdrop {
   margin-top: 6px;
 }
 
-.file-button {
+.file-button,
+.button-link {
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid var(--line);
@@ -491,6 +541,7 @@ dialog::backdrop {
   color: var(--blue-dark);
   background: #fff;
   cursor: pointer;
+  font-size: 14px;
 }
 
 .file-button input {

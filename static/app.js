@@ -12,12 +12,14 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, "0");
+const BASE_TITLE = document.title;
 const toLocalInput = (date) => {
   const d = new Date(date);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 16);
 };
-const today = () => new Date().toISOString().slice(0, 10);
+const toDateInput = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const today = () => toDateInput(new Date());
 const FILTER_KEYS = ["from", "to", "client_id", "project_id", "tags"];
 
 function durationFromSeconds(seconds) {
@@ -97,6 +99,10 @@ function currencyOptions(selected = "RUB") {
   return Object.keys(state.currencies).map((cur) => `<option value="${cur}" ${cur === selected ? "selected" : ""}>${cur}</option>`).join("");
 }
 
+function formatAmount(value) {
+  return String(value ?? "0,00").replace(".", ",");
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -135,13 +141,24 @@ function renderSelects() {
   $("projectClient").innerHTML = optionList(state.clients, "", "Выбери клиента");
   $("clientCurrency").innerHTML = currencyOptions();
   $("projectCurrency").innerHTML = currencyOptions();
-  $("tagSuggestions").innerHTML = state.tags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join("");
+  updateTagSuggestions($("entryTags")?.value || "");
   const selectedTags = new Set(state.filters.tags || []);
   $("tagFilters").innerHTML = state.tags.length
     ? state.tags.map((tag) => `
       <label><input type="checkbox" value="${escapeHtml(tag)}" ${selectedTags.has(tag) ? "checked" : ""}> ${escapeHtml(tag)}</label>
     `).join("")
     : `<span class="muted">Тегов пока нет.</span>`;
+  $("tagSummary").textContent = selectedTags.size ? `Теги: ${[...selectedTags].join(", ")}` : "Все теги";
+}
+
+function updateTagSuggestions(value = "") {
+  const lastComma = value.lastIndexOf(",");
+  const prefix = lastComma >= 0 ? `${value.slice(0, lastComma + 1).trimEnd()} ` : "";
+  const existing = new Set(value.split(",").map((tag) => tag.trim().toLowerCase()).filter(Boolean));
+  $("tagSuggestions").innerHTML = state.tags
+    .filter((tag) => !existing.has(tag.toLowerCase()))
+    .map((tag) => `<option value="${escapeHtml(prefix + tag)}"></option>`)
+    .join("");
 }
 
 function filteredProjects(clientId) {
@@ -157,18 +174,25 @@ function renderTimer() {
     $("timerClock").textContent = "00:00:00";
     $("runningStatus").textContent = "Счетчик остановлен";
     $("runningMeta").textContent = "Нажми «Старт», детали можно заполнить уже после запуска.";
+    document.title = BASE_TITLE;
     return;
   }
   const project = state.projects.find((p) => String(p.id) === String(state.running.project_id));
   const client = state.clients.find((c) => String(c.id) === String(state.running.client_id));
   $("runningStatus").textContent = state.running.description || "Идет работа";
   $("runningMeta").textContent = [client?.name, project?.name].filter(Boolean).join(" / ") || "Детали еще не заполнены";
+  tickTimer();
 }
 
 function tickTimer() {
-  if (!state.running) return;
+  if (!state.running) {
+    document.title = BASE_TITLE;
+    return;
+  }
   const seconds = (Date.now() - new Date(state.running.start_at).getTime()) / 1000;
-  $("timerClock").textContent = durationFromSeconds(seconds);
+  const duration = durationFromSeconds(seconds);
+  $("timerClock").textContent = duration;
+  document.title = `${duration} · ${BASE_TITLE}`;
 }
 
 function renderEntries() {
@@ -177,8 +201,8 @@ function renderEntries() {
   $("todayDuration").textContent = durationFromSeconds(todayEntries.reduce((sum, entry) => sum + entry.duration_seconds, 0));
   $("totalDuration").textContent = state.totals.duration;
   $("totalAmount").textContent = Object.entries(state.totals.amounts || {})
-    .map(([cur, value]) => `${state.currencies[cur] || cur} ${value}`)
-    .join(", ") || "0.00";
+    .map(([cur, value]) => `${state.currencies[cur] || cur} ${formatAmount(value)}`)
+    .join(", ") || "0,00";
 
   $("recentEntries").innerHTML = state.entries.slice(0, 6).map(entryRow).join("") || `<p class="muted">Записей пока нет.</p>`;
   $("entriesTable").innerHTML = state.entries.map(tableRow).join("") || `<tr><td colspan="8" class="muted">Ничего не найдено.</td></tr>`;
@@ -209,7 +233,7 @@ function tableRow(entry) {
       <td>${escapeHtml(entry.description)}<br><small class="muted">${escapeHtml(entry.tags)}</small></td>
       <td>${entry.timerange}</td>
       <td>${entry.duration}</td>
-      <td>${entry.currency_symbol} ${entry.amount}</td>
+      <td>${entry.currency_symbol} ${formatAmount(entry.amount)}</td>
       <td>
         <div class="row-actions">
           <button class="ghost" data-repeat="${entry.id}" title="Запустить такую же запись"><i class="fa-solid fa-play"></i></button>
@@ -222,36 +246,69 @@ function tableRow(entry) {
 }
 
 function renderClients() {
-  $("clientsList").innerHTML = state.clients.map((client) => `
-    <article class="card">
-      <div class="card-title">${escapeHtml(client.name)}</div>
-      <div class="card-meta">
-        <span>${escapeHtml(client.contact_name || "Контакт не указан")}</span>
-        <span>${escapeHtml(client.contact_email || "Email не указан")}</span>
-        <span>${client.currency}</span>
-      </div>
-      <div class="row-actions">
-        <button class="ghost" data-edit-client="${client.id}"><i class="fa-solid fa-pen"></i> Править</button>
-        <button class="ghost danger" data-delete-client="${client.id}"><i class="fa-solid fa-trash"></i> Удалить</button>
-      </div>
-    </article>
-  `).join("") || `<p class="muted">Клиентов пока нет.</p>`;
+  $("clientsList").innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Клиент</th>
+            <th>Контакт</th>
+            <th>Email</th>
+            <th>Валюта</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.clients.map((client) => `
+            <tr>
+              <td>${escapeHtml(client.name)}</td>
+              <td>${escapeHtml(client.contact_name || "Контакт не указан")}</td>
+              <td>${escapeHtml(client.contact_email || "Email не указан")}</td>
+              <td>${client.currency}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="ghost" data-edit-client="${client.id}" title="Редактировать"><i class="fa-solid fa-pen"></i></button>
+                  <button class="ghost danger" data-delete-client="${client.id}" title="Удалить"><i class="fa-solid fa-trash"></i></button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="5" class="muted">Клиентов пока нет.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderProjects() {
-  $("projectsList").innerHTML = state.projects.map((project) => `
-    <article class="card">
-      <div class="card-title">${escapeHtml(project.name)}</div>
-      <div class="card-meta">
-        <span>${escapeHtml(project.client_name)}</span>
-        <span>${state.currencies[project.currency] || project.currency} ${project.hourly_rate}/час</span>
-      </div>
-      <div class="row-actions">
-        <button class="ghost" data-edit-project="${project.id}"><i class="fa-solid fa-pen"></i> Править</button>
-        <button class="ghost danger" data-delete-project="${project.id}"><i class="fa-solid fa-trash"></i> Удалить</button>
-      </div>
-    </article>
-  `).join("") || `<p class="muted">Проектов пока нет.</p>`;
+  $("projectsList").innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Проект</th>
+            <th>Клиент</th>
+            <th>Ставка</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.projects.map((project) => `
+            <tr>
+              <td>${escapeHtml(project.name)}</td>
+              <td>${escapeHtml(project.client_name)}</td>
+              <td>${state.currencies[project.currency] || project.currency} ${formatAmount(project.hourly_rate)}/час</td>
+              <td>
+                <div class="row-actions">
+                  <button class="ghost" data-edit-project="${project.id}" title="Редактировать"><i class="fa-solid fa-pen"></i></button>
+                  <button class="ghost danger" data-delete-project="${project.id}" title="Удалить"><i class="fa-solid fa-trash"></i></button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="4" class="muted">Проектов пока нет.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderDashboard() {
@@ -387,6 +444,18 @@ function collectFilters() {
   };
 }
 
+function syncPrintForm() {
+  collectFilters();
+  const fields = [];
+  Object.entries(state.filters).forEach(([key, value]) => {
+    const values = Array.isArray(value) ? value : [value];
+    values.filter(Boolean).forEach((item) => {
+      fields.push(`<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(item)}">`);
+    });
+  });
+  $("printFields").innerHTML = fields.join("");
+}
+
 async function applyFilters({ replace = false } = {}) {
   collectFilters();
   state.view = "reports";
@@ -401,6 +470,7 @@ async function resetFilters() {
   $("filterClient").value = "";
   $("filterProject").value = "";
   document.querySelectorAll("#tagFilters input").forEach((input) => input.checked = false);
+  $("tagSummary").textContent = "Все теги";
   writeFiltersToUrl(false);
   await loadState();
 }
@@ -419,12 +489,12 @@ function setPeriod(kind) {
     start = new Date(now.getFullYear(), 0, 1);
     end = now;
   }
-  $("filterFrom").value = start.toISOString().slice(0, 10);
-  $("filterTo").value = end.toISOString().slice(0, 10);
+  $("filterFrom").value = toDateInput(start);
+  $("filterTo").value = toDateInput(end);
 }
 
 document.addEventListener("click", async (event) => {
-  const target = event.target.closest("button, label");
+  const target = event.target.closest("button, label, a");
   if (!target) return;
   if (target.dataset.view) setView(target.dataset.view);
   if (target.dataset.viewJump) setView(target.dataset.viewJump);
@@ -439,10 +509,6 @@ document.addEventListener("click", async (event) => {
   }
   if (target.id === "resetFilters") {
     await resetFilters();
-  }
-  if (target.id === "exportPdf") {
-    collectFilters();
-    window.location.href = `/api/export.pdf?${queryString()}`;
   }
   if (target.dataset.editEntry) openEntryDialog(state.entries.find((entry) => String(entry.id) === target.dataset.editEntry));
   if (target.dataset.editClient) openClientDialog(state.clients.find((client) => String(client.id) === target.dataset.editClient));
@@ -471,9 +537,14 @@ $("timerButton").addEventListener("click", async () => {
 });
 
 $("entryClient").addEventListener("change", () => updateEntryProjects());
+$("entryTags").addEventListener("input", (event) => updateTagSuggestions(event.target.value));
 $("filterClient").addEventListener("change", () => {
   $("filterProject").innerHTML = optionList(filteredProjects($("filterClient").value));
   $("filterProject").value = "";
+});
+$("tagFilters").addEventListener("change", () => {
+  const selected = [...document.querySelectorAll("#tagFilters input:checked")].map((input) => input.value);
+  $("tagSummary").textContent = selected.length ? `Теги: ${selected.join(", ")}` : "Все теги";
 });
 
 window.addEventListener("popstate", async () => {
@@ -488,6 +559,7 @@ document.querySelectorAll("[data-close]").forEach((button) => {
 $("entryForm").addEventListener("submit", saveEntry);
 $("clientForm").addEventListener("submit", saveClient);
 $("projectForm").addEventListener("submit", saveProject);
+$("printForm").addEventListener("submit", syncPrintForm);
 
 $("importPdf").addEventListener("change", async (event) => {
   const file = event.target.files[0];

@@ -4,8 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Anastasia Che Time Tracker</title>
+    <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=20260618-print">
   </head>
   <body>
     <div id="app">
@@ -74,7 +75,7 @@
               <h2>Фильтр</h2>
               <div class="actions">
                 <button id="periodMonth" class="ghost">Этот месяц</button>
-                <button id="periodPrevMonth" class="ghost">Прошлый</button>
+                <button id="periodPrevMonth" class="ghost">Предыдущий месяц</button>
                 <button id="periodYear" class="ghost">С начала года</button>
               </div>
             </div>
@@ -83,16 +84,21 @@
               <label>Дата до <input id="filterTo" type="date"></label>
               <label>Клиент <select id="filterClient"></select></label>
               <label>Проект <select id="filterProject"></select></label>
-            </div>
-            <div class="filter-tags">
-              <span class="filter-label">Теги</span>
-              <div id="tagFilters" class="tag-filters"></div>
+              <label>Теги
+                <details class="tag-select">
+                  <summary id="tagSummary">Все теги</summary>
+                  <div id="tagFilters" class="tag-filters"></div>
+                </details>
+              </label>
             </div>
             <div class="actions">
               <button id="applyFilters">Применить</button>
               <button id="resetFilters" class="secondary">Сбросить</button>
-                <button id="exportPdf" class="secondary"><i class="fa-solid fa-file-pdf"></i> Экспорт PDF</button>
-                <label class="file-button"><i class="fa-solid fa-file-import"></i> Импорт PDF <input id="importPdf" type="file" accept="application/pdf"></label>
+              <form id="printForm" class="inline-form" action="/print-report" method="get" target="_blank">
+                <span id="printFields"></span>
+                <button id="printReport" type="submit" class="secondary"><i class="fa-solid fa-print"></i> Печать</button>
+              </form>
+              <label class="file-button"><i class="fa-solid fa-file-import"></i> Импорт PDF <input id="importPdf" type="file" accept="application/pdf"></label>
             </div>
           </div>
 
@@ -128,7 +134,7 @@
               <h2>Клиенты</h2>
               <button id="addClient"><i class="fa-solid fa-plus"></i> Клиент</button>
             </div>
-            <div id="clientsList" class="cards-grid"></div>
+            <div id="clientsList"></div>
           </div>
         </section>
 
@@ -138,7 +144,7 @@
               <h2>Проекты</h2>
               <button id="addProject"><i class="fa-solid fa-plus"></i> Проект</button>
             </div>
-            <div id="projectsList" class="cards-grid"></div>
+            <div id="projectsList"></div>
           </div>
         </section>
 
@@ -203,6 +209,6 @@
       </form>
     </dialog>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260618-print"></script>
   </body>
 </html>
