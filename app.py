@@ -282,7 +282,7 @@ def split_clockify_project_client(value: str) -> tuple[str, str]:
 def split_clockify_client_project(value: str) -> tuple[str, str]:
     if " - " not in value:
         return "Без клиента", value.strip() or "Без проекта"
-    client_name, project_name = value.rsplit(" - ", 1)
+    client_name, project_name = value.split(" - ", 1)
     return client_name.strip() or "Без клиента", project_name.strip() or "Без проекта"
 
 
@@ -307,10 +307,16 @@ def parse_detail_group(group: list[str]) -> dict | None:
     project_client = ""
 
     for line in group:
+        line_timerange = TIMERANGE_RE.search(line)
         if timerange_match is None:
-            timerange_match = TIMERANGE_RE.search(line)
-        if " - " in line and not TIMERANGE_RE.search(line):
-            project_client = strip_noise(line)
+            timerange_match = line_timerange
+        if " - " in line:
+            candidate = TIMERANGE_RE.sub("", line)
+            candidate = DATE_LINE_RE.sub(lambda m: m.group(2) or "", candidate, count=1)
+            candidate = TIME_RE.sub("", candidate, count=1)
+            candidate = strip_noise(candidate)
+            if candidate and candidate != "+1":
+                project_client = candidate
 
     if not timerange_match or not project_client:
         return None
