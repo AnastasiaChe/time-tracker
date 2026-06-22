@@ -533,13 +533,13 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
         return f"""
       <table>
         <colgroup>
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 11.36%">
-          <col style="width: 24.07%">
-          <col style="width: 11.36%">
-          <col style="width: 20.45%">
+          <col style="width: 9%">
+          <col style="width: 10%">
+          <col style="width: 11%">
+          <col style="width: 28%">
+          <col style="width: 18%">
+          <col style="width: 10%">
+          <col style="width: 14%">
         </colgroup>
         <thead>
           <tr>
@@ -1155,7 +1155,7 @@ def build_pdf(entries: list[dict], query: dict[str, list[str]]) -> bytes:
             ]
         )
     data.append(["Total", "", "", "", "", total["duration"], amounts])
-    table = Table(data, colWidths=[23 * mm, 36 * mm, 42 * mm, 72 * mm, 38 * mm, 28 * mm, 30 * mm], repeatRows=1)
+    table = Table(data, colWidths=[22 * mm, 31 * mm, 34 * mm, 98 * mm, 34 * mm, 22 * mm, 28 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
