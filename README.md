@@ -4,7 +4,7 @@
 
 ## Стек
 
-- Python 3.11 или 3.12
+- Python 3.11 или новее
 - Встроенный HTTP-сервер Python
 - SQLite
 - HTML, CSS, JavaScript без сборщика
@@ -27,14 +27,14 @@
 
 ## Установка на macOS
 
-1. Установите Python 3.11 или 3.12:
+1. Установите Python 3.11 или новее:
 
    ```bash
    python3 --version
    ```
 
    Если Python не установлен, поставьте его с [python.org](https://www.python.org/downloads/macos/).
-   Если команда показывает Python 3.9, поставьте Python 3.12 и используйте команду `python3.12`.
+   Если команда показывает Python 3.9, поставьте свежий Python и используйте его команду, например `python3.14`.
 
 2. Скачайте проект одним из способов.
 
@@ -55,7 +55,7 @@
 4. Создайте виртуальное окружение:
 
    ```bash
-   python3.12 -m venv .venv
+   python3 -m venv .venv
    source .venv/bin/activate
    ```
 
@@ -79,7 +79,7 @@
 
 ## Установка на Windows
 
-1. Установите Python 3.11 или 3.12 с [python.org](https://www.python.org/downloads/windows/).
+1. Установите Python 3.11 или новее с [python.org](https://www.python.org/downloads/windows/).
 
    Во время установки включите галочку `Add python.exe to PATH`.
 
@@ -178,11 +178,13 @@ python app.py --seed-demo
 Ошибка `source: no such file or directory: .venv/bin/activate` означает, что виртуальное окружение еще не создано. Перейдите в папку проекта и выполните:
 
 ```bash
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
+
+Если у вас установлена конкретная свежая версия Python, можно указать ее явно, например `python3.14 -m venv .venv`.
 
 Ошибка `zsh: command not found: python` на macOS обычно означает, что виртуальное окружение не активировалось. После успешной команды `source .venv/bin/activate` команда `python` появится.
 

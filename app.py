@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import cgi
 import html
 import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from email import policy
+from email.parser import BytesParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
@@ -40,6 +41,18 @@ SETTINGS_DEFAULTS = {
     "report_logo": "/static/assets/logo-vertical.svg",
 }
 UPLOAD_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+
+
+class FormField:
+    def __init__(self, name: str, content: bytes, filename: str = "", charset: str = "utf-8") -> None:
+        self.name = name
+        self.content = content
+        self.filename = filename
+        self.charset = charset
+
+    @property
+    def text(self) -> str:
+        return self.content.decode(self.charset or "utf-8", errors="replace")
 
 
 def register_pdf_fonts() -> None:
@@ -212,6 +225,33 @@ def read_json(handler: SimpleHTTPRequestHandler) -> dict:
     return json.loads(handler.rfile.read(length).decode("utf-8"))
 
 
+def read_multipart_form(handler: SimpleHTTPRequestHandler) -> dict[str, FormField]:
+    content_type = handler.headers.get("Content-Type", "")
+    if "multipart/form-data" not in content_type:
+        raise ValueError("Ожидалась форма multipart/form-data.")
+    length = int(handler.headers.get("Content-Length", "0"))
+    if not length:
+        return {}
+    body = handler.rfile.read(length)
+    header = (
+        f"Content-Type: {content_type}\r\n"
+        "MIME-Version: 1.0\r\n\r\n"
+    ).encode("utf-8")
+    message = BytesParser(policy=policy.default).parsebytes(header + body)
+    fields: dict[str, FormField] = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if not name:
+            continue
+        fields[name] = FormField(
+            name=name,
+            content=part.get_payload(decode=True) or b"",
+            filename=part.get_filename() or "",
+            charset=part.get_content_charset() or "utf-8",
+        )
+    return fields
+
+
 def add_cors_headers(handler: SimpleHTTPRequestHandler) -> None:
     handler.send_header("Access-Control-Allow-Origin", "*")
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -278,21 +318,21 @@ def save_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def save_uploaded_logo(field: cgi.FieldStorage, name: str) -> str | None:
-    filename = Path(getattr(field, "filename", "") or "")
+def save_uploaded_logo(field: FormField, name: str) -> str | None:
+    filename = Path(field.filename or "")
     suffix = filename.suffix.lower()
     if suffix not in UPLOAD_EXTENSIONS:
         raise ValueError("Логотип должен быть PNG, JPG, WEBP или SVG.")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     target = UPLOAD_DIR / f"{name}{suffix}"
     with target.open("wb") as file:
-        file.write(field.file.read())
+        file.write(field.content)
     return f"/static/uploads/{target.name}"
 
 
 def save_settings_form(handler: SimpleHTTPRequestHandler) -> dict[str, str]:
-    form = cgi.FieldStorage(fp=handler.rfile, headers=handler.headers, environ={"REQUEST_METHOD": "POST"})
-    company_name = str(form.getfirst("company_name") or "").strip()
+    form = read_multipart_form(handler)
+    company_name = (form.get("company_name").text if form.get("company_name") else "").strip()
     if not company_name:
         raise ValueError("Название компании не может быть пустым.")
     with connect() as conn:
@@ -301,8 +341,8 @@ def save_settings_form(handler: SimpleHTTPRequestHandler) -> dict[str, str]:
             ("interface_logo", "interface_logo"),
             ("report_logo", "report_logo"),
         ):
-            file_item = form[field_name] if field_name in form else None
-            if file_item is not None and getattr(file_item, "filename", ""):
+            file_item = form.get(field_name)
+            if file_item is not None and file_item.filename:
                 save_setting(conn, setting_key, save_uploaded_logo(file_item, setting_key))
     return get_settings()
 
@@ -1273,11 +1313,11 @@ class Handler(SimpleHTTPRequestHandler):
                     )
                 return send_json(self, {"id": cur.lastrowid}, 201)
             if parsed.path == "/api/import":
-                form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST"})
-                file_item = form["file"] if "file" in form else None
-                if file_item is None or not getattr(file_item, "file", None):
+                form = read_multipart_form(self)
+                file_item = form.get("file")
+                if file_item is None or not file_item.content:
                     return bad_request(self, "PDF-файл не найден.")
-                return send_json(self, import_clockify_pdf(file_item.file.read()))
+                return send_json(self, import_clockify_pdf(file_item.content))
             if parsed.path == "/api/settings":
                 return send_json(self, {"settings": save_settings_form(self)})
             bad_request(self, "Unknown endpoint", 404)
