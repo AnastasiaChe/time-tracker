@@ -32,6 +32,7 @@ CURRENCIES = {"RUB": "₽", "USD": "$", "CAD": "C$"}
 PDF_CURRENCIES = {"RUB": "RUB", "USD": "$", "CAD": "CAD"}
 PDF_FONT = "Helvetica"
 PDF_FONT_BOLD = "Helvetica-Bold"
+UNTAGGED_FILTER = "__untagged__"
 
 
 def register_pdf_fonts() -> None:
@@ -97,6 +98,16 @@ def init_db() -> None:
                 start_at TEXT NOT NULL,
                 end_at TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS running_timer (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                description TEXT DEFAULT '',
+                tags TEXT DEFAULT '',
+                start_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             """
         )
@@ -171,9 +182,16 @@ def read_json(handler: SimpleHTTPRequestHandler) -> dict:
     return json.loads(handler.rfile.read(length).decode("utf-8"))
 
 
+def add_cors_headers(handler: SimpleHTTPRequestHandler) -> None:
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+
 def send_json(handler: SimpleHTTPRequestHandler, payload: object, status: int = 200) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
+    add_cors_headers(handler)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
@@ -183,6 +201,7 @@ def send_json(handler: SimpleHTTPRequestHandler, payload: object, status: int = 
 def send_html(handler: SimpleHTTPRequestHandler, body: str, status: int = 200) -> None:
     payload = body.encode("utf-8")
     handler.send_response(status)
+    add_cors_headers(handler)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
     handler.send_header("Content-Length", str(len(payload)))
     handler.end_headers()
@@ -224,6 +243,57 @@ def validate_entry(data: dict) -> tuple[int, int, str, str, str]:
     return client_id, project_id, description, tags, start_at, end_at
 
 
+def validate_running_timer(data: dict) -> tuple[int, int, str, str, str]:
+    client_id = int(data.get("client_id") or 0)
+    project_id = int(data.get("project_id") or 0)
+    description = str(data.get("description") or "").strip()
+    tags = clean_tags(str(data.get("tags") or ""))
+    start_at = str(data.get("start_at") or datetime.now().strftime(DATE_FMT))[:16]
+    if not client_id or not project_id:
+        raise ValueError("Нужны клиент и проект.")
+    parse_dt(start_at)
+    return client_id, project_id, description, tags, start_at
+
+
+def get_running_timer() -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT rt.*, c.name AS client_name, p.name AS project_name
+            FROM running_timer rt
+            JOIN clients c ON c.id = rt.client_id
+            JOIN projects p ON p.id = rt.project_id
+            WHERE rt.id = 1
+            """
+        ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def save_running_timer(data: dict) -> dict:
+    values = validate_running_timer(data)
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO running_timer (id, client_id, project_id, description, tags, start_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+                client_id=excluded.client_id,
+                project_id=excluded.project_id,
+                description=excluded.description,
+                tags=excluded.tags,
+                start_at=excluded.start_at,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            values,
+        )
+    return get_running_timer() or {}
+
+
+def clear_running_timer() -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM running_timer WHERE id = 1")
+
+
 def filtered_entries(query: dict[str, list[str]]) -> list[dict]:
     clauses = []
     params: list[str] = []
@@ -247,11 +317,16 @@ def filtered_entries(query: dict[str, list[str]]) -> list[dict]:
     return [
         entry
         for entry in entries
-        if all(
-            tag in {part.strip().casefold() for part in (entry.get("tags") or "").split(",") if part.strip()}
-            for tag in tag_values
-        )
+        if entry_matches_tags(entry, tag_values)
     ]
+
+
+def entry_matches_tags(entry: dict, tag_values: list[str]) -> bool:
+    entry_tags = {part.strip().casefold() for part in (entry.get("tags") or "").split(",") if part.strip()}
+    return any(
+        (tag == UNTAGGED_FILTER and not entry_tags) or (tag != UNTAGGED_FILTER and tag in entry_tags)
+        for tag in tag_values
+    )
 
 
 def totals(entries: list[dict]) -> dict:
@@ -1011,6 +1086,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "tags": tags,
                         "totals": totals(entries),
                         "currencies": CURRENCIES,
+                        "running": get_running_timer(),
                     },
                 )
             if path == "/api/export.pdf":
@@ -1031,9 +1107,36 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             bad_request(self, str(exc), 500)
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        add_cors_headers(self)
+        self.end_headers()
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         try:
+            if parsed.path == "/api/timer/start":
+                return send_json(self, {"running": save_running_timer(read_json(self))}, 201)
+            if parsed.path == "/api/timer/stop":
+                running = get_running_timer()
+                if not running:
+                    return bad_request(self, "Таймер не запущен.", 404)
+                end = str((read_json(self).get("end_at") or datetime.now().strftime(DATE_FMT)))[:16]
+                start_dt = parse_dt(running["start_at"])
+                end_dt = parse_dt(end)
+                if end_dt <= start_dt:
+                    end = (start_dt + timedelta(minutes=1)).strftime(DATE_FMT)
+                values = validate_entry({**running, "end_at": end})
+                with connect() as conn:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO time_entries (client_id, project_id, description, tags, start_at, end_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        values,
+                    )
+                    conn.execute("DELETE FROM running_timer WHERE id = 1")
+                return send_json(self, {"id": cur.lastrowid, "running": None}, 201)
             if parsed.path == "/api/clients":
                 data = read_json(self)
                 with connect() as conn:
@@ -1086,6 +1189,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/timer":
+            try:
+                return send_json(self, {"running": save_running_timer(read_json(self))})
+            except Exception as exc:
+                return bad_request(self, str(exc), 500)
         match = re.match(r"/api/(clients|projects|entries)/(\d+)$", parsed.path)
         if not match:
             return bad_request(self, "Unknown endpoint", 404)
@@ -1130,6 +1238,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/timer":
+            clear_running_timer()
+            return send_json(self, {"running": None})
         match = re.match(r"/api/(clients|projects|entries)/(\d+)$", parsed.path)
         if not match:
             return bad_request(self, "Unknown endpoint", 404)

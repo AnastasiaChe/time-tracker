@@ -6,8 +6,15 @@ const state = {
   totals: { duration: "00:00:00", amounts: {} },
   currencies: { RUB: "₽", USD: "$", CAD: "C$" },
   view: "tracker",
-  running: JSON.parse(localStorage.getItem("runningTimer") || "null"),
+  running: null,
   filters: {},
+  sorts: {
+    entries: { key: "date", direction: "desc" },
+    clients: { key: "created_at", direction: "desc" },
+    projects: { key: "created_at", direction: "desc" },
+    dashboardActivities: { key: "last_activity", direction: "desc" },
+  },
+  completingTimer: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -21,11 +28,18 @@ const toLocalInput = (date) => {
 const toDateInput = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const today = () => toDateInput(new Date());
 const FILTER_KEYS = ["from", "to", "client_id", "project_id", "tags"];
+const UNTAGGED_FILTER = "__untagged__";
+let calendarBaseDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let calendarHoverDate = "";
+let calendarSuppressClick = false;
+let calendarStartNewRangeOnNextDate = false;
+let dateRangePresetLabel = "";
 
 function ensureEndAfterStart(startAt, endDate = new Date()) {
   const start = new Date(startAt);
   const end = new Date(endDate);
-  if (end <= start) end.setTime(start.getTime() + 60000);
+  const endInput = toLocalInput(end);
+  if (new Date(endInput) <= start) end.setTime(start.getTime() + 60000);
   return toLocalInput(end);
 }
 
@@ -61,6 +75,7 @@ function queryString() {
 
 function readFiltersFromUrl() {
   const params = new URLSearchParams(window.location.search);
+  dateRangePresetLabel = "";
   state.filters = {
     from: params.get("from") || "",
     to: params.get("to") || "",
@@ -106,6 +121,52 @@ function currencyOptions(selected = "RUB") {
   return Object.keys(state.currencies).map((cur) => `<option value="${cur}" ${cur === selected ? "selected" : ""}>${cur}</option>`).join("");
 }
 
+function tagLabel(tag) {
+  return tag === UNTAGGED_FILTER ? "Без тегов" : tag;
+}
+
+function parseDateInput(value) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDotDate(value) {
+  const date = typeof value === "string" ? parseDateInput(value) : value;
+  if (!date) return "";
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`;
+}
+
+function formatShortDate(value) {
+  const date = typeof value === "string" ? parseDateInput(value) : value;
+  if (!date) return "";
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "");
+}
+
+function sameDate(a, b) {
+  return a && b && toDateInput(a) === toDateInput(b);
+}
+
+function addDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function addMonths(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function weekBounds(date = new Date()) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return { start, end: addDays(start, 6) };
+}
+
+function monthName(date) {
+  return date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }).replace(/^./, (char) => char.toUpperCase());
+}
+
 function formatAmount(value) {
   return String(value ?? "0,00").replace(".", ",");
 }
@@ -118,6 +179,106 @@ function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#039;",
   })[char]);
+}
+
+function sortHeader(table, key, label) {
+  const current = state.sorts[table];
+  const active = current?.key === key;
+  const direction = active ? current.direction : "";
+  const icon = direction === "asc" ? "fa-chevron-up" : "fa-chevron-down";
+  return `
+    <button class="sort-button${active ? " active" : ""}" type="button" data-sort-table="${table}" data-sort-key="${key}" aria-sort="${active ? direction : "none"}">
+      <span>${escapeHtml(label)}</span>
+      ${active ? `<i class="fa-solid ${icon}"></i>` : ""}
+    </button>
+  `;
+}
+
+function normalizeSortValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") return value;
+  const numeric = Number(value);
+  if (value !== "" && Number.isFinite(numeric)) return numeric;
+  return String(value).toLocaleLowerCase("ru-RU");
+}
+
+function compareSortValues(a, b) {
+  const left = normalizeSortValue(a);
+  const right = normalizeSortValue(b);
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right), "ru-RU", { numeric: true, sensitivity: "base" });
+}
+
+function entrySortValue(entry, key) {
+  return {
+    created_at: entry.created_at || entry.start_at || entry.id,
+    date: entry.start_at || `${entry.date || ""}T00:00`,
+    client: entry.client_name,
+    project: entry.project_name,
+    description: `${entry.description || ""} ${entry.tags || ""}`,
+    time: entry.start_at,
+    duration: entry.duration_seconds,
+    amount: Number(entry.amount_value || 0),
+  }[key];
+}
+
+function clientSortValue(client, key) {
+  return {
+    created_at: client.created_at || client.id,
+    name: client.name,
+    contact: client.contact_name,
+    email: client.contact_email,
+    currency: client.currency,
+  }[key];
+}
+
+function projectSortValue(project, key) {
+  return {
+    created_at: project.created_at || project.id,
+    name: project.name,
+    client: project.client_name,
+    rate: Number(project.hourly_rate || 0),
+  }[key];
+}
+
+function dashboardActivitySortValue(activity, key) {
+  return {
+    client: activity.key,
+    last_activity: activity.latest?.start_at || activity.latest?.date || "",
+    total: activity.seconds,
+  }[key];
+}
+
+function sortRows(rows, table, valueFn) {
+  const sort = state.sorts[table];
+  const direction = sort?.direction === "asc" ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    const compared = compareSortValues(valueFn(a, sort.key), valueFn(b, sort.key));
+    if (compared) return compared * direction;
+    return compareSortValues(a.id ?? a.key ?? "", b.id ?? b.key ?? "") * -1;
+  });
+}
+
+function setTableSort(table, key) {
+  const current = state.sorts[table] || {};
+  state.sorts[table] = {
+    key,
+    direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+  };
+  render();
+}
+
+function renderSortHeaders() {
+  document.querySelectorAll(".sort-button").forEach((button) => {
+    const sort = state.sorts[button.dataset.sortTable];
+    const active = sort?.key === button.dataset.sortKey;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-sort", active ? sort.direction : "none");
+    button.querySelector("i")?.remove();
+    if (active) {
+      button.insertAdjacentHTML("beforeend", `<i class="fa-solid ${sort.direction === "asc" ? "fa-chevron-up" : "fa-chevron-down"}"></i>`);
+    }
+  });
 }
 
 function setView(view) {
@@ -136,11 +297,16 @@ function render() {
   renderClients();
   renderProjects();
   renderDashboard();
+  renderSortHeaders();
 }
 
 function renderSelects() {
   $("filterFrom").value = state.filters.from || "";
   $("filterTo").value = state.filters.to || "";
+  if (state.filters.from && !$("dateRangeSelect")?.open) {
+    const filterStart = parseDateInput(state.filters.from);
+    calendarBaseDate = new Date(filterStart.getFullYear(), filterStart.getMonth(), 1);
+  }
   $("filterClient").innerHTML = optionList(state.clients, state.filters.client_id || "");
   $("filterProject").innerHTML = optionList(filteredProjects(state.filters.client_id || ""), state.filters.project_id || "");
   $("entryClient").innerHTML = optionList(state.clients, "", "Выбери клиента");
@@ -150,12 +316,125 @@ function renderSelects() {
   $("projectCurrency").innerHTML = currencyOptions();
   updateTagSuggestions($("entryTags")?.value || "");
   const selectedTags = new Set(state.filters.tags || []);
-  $("tagFilters").innerHTML = state.tags.length
-    ? state.tags.map((tag) => `
-      <label><input type="checkbox" value="${escapeHtml(tag)}" ${selectedTags.has(tag) ? "checked" : ""}> ${escapeHtml(tag)}</label>
+  const filterTags = [UNTAGGED_FILTER, ...state.tags];
+  $("tagFilters").innerHTML = filterTags.length
+    ? filterTags.map((tag) => `
+      <label><input type="checkbox" value="${escapeHtml(tag)}" ${selectedTags.has(tag) ? "checked" : ""}> ${escapeHtml(tagLabel(tag))}</label>
     `).join("")
     : `<span class="muted">Тегов пока нет.</span>`;
-  $("tagSummary").textContent = selectedTags.size ? `Теги: ${[...selectedTags].join(", ")}` : "Все теги";
+  $("tagSummary").textContent = selectedTags.size ? [...selectedTags].map(tagLabel).join(", ") : "Все";
+  updateDateRangeSummary();
+  renderCalendarMonths();
+}
+
+function updateDateRangeSummary() {
+  const from = $("filterFrom").value;
+  const to = $("filterTo").value;
+  let text = "Все";
+  if (dateRangePresetLabel && from && to) text = dateRangePresetLabel;
+  else if (from && to) text = `${formatDotDate(from)} — ${formatDotDate(to)}`;
+  else if (from) text = formatDotDate(from);
+  else if (to) text = formatDotDate(to);
+  ["dateRangeText", "dashboardDateRangeText"].forEach((id) => {
+    const node = $(id);
+    if (node) node.textContent = text;
+  });
+}
+
+function renderCalendarMonths() {
+  ["calendarMonths", "dashboardCalendarMonths"].forEach((id) => {
+    const container = $(id);
+    if (container) container.innerHTML = [0, 1].map((offset) => calendarMonthMarkup(addMonths(calendarBaseDate, offset), offset)).join("");
+  });
+}
+
+function calendarSelectionRange() {
+  const fromValue = $("filterFrom").value;
+  const toValue = $("filterTo").value;
+  let from = parseDateInput(fromValue);
+  let to = parseDateInput(toValue);
+  if (from && !to && calendarHoverDate) {
+    const hover = parseDateInput(calendarHoverDate);
+    if (hover < from) {
+      to = from;
+      from = hover;
+    } else {
+      to = hover;
+    }
+  }
+  return { from, to };
+}
+
+function calendarMonthMarkup(monthDate, offset) {
+  const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  const days = [];
+  for (let index = 0; index < 35; index += 1) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    days.push(calendarDayMarkup(day, monthDate));
+  }
+  return `
+    <div class="calendar-month">
+      <div class="calendar-head">
+        ${offset === 0 ? `<button type="button" data-calendar-shift="-1" title="Предыдущий месяц"><i class="fa-solid fa-chevron-left"></i></button>` : `<span></span>`}
+        <span class="calendar-title">${monthName(monthDate)}</span>
+        ${offset === 1 ? `<button type="button" data-calendar-shift="1" title="Следующий месяц"><i class="fa-solid fa-chevron-right"></i></button>` : `<span></span>`}
+      </div>
+      <div class="calendar-grid">
+        ${weekdays.map((day) => `<span class="calendar-weekday">${day}</span>`).join("")}
+        ${days.join("")}
+      </div>
+    </div>
+  `;
+}
+
+function calendarDayMarkup(day, monthDate) {
+  const { from, to } = calendarSelectionRange();
+  const today = new Date();
+  const inRange = from && to && day >= from && day <= to;
+  const isStart = sameDate(day, from);
+  const isEnd = sameDate(day, to);
+  const isSingle = isStart && (!to || isEnd);
+  const classes = [
+    "calendar-day",
+    day.getMonth() !== monthDate.getMonth() ? "outside" : "",
+    inRange || isStart || isEnd ? "in-range" : "",
+    isSingle ? "range-single" : "",
+    isStart && !isSingle ? "range-start" : "",
+    isEnd && !isSingle ? "range-end" : "",
+    sameDate(day, today) ? "today" : "",
+  ].filter(Boolean).join(" ");
+  return `<button type="button" class="${classes}" data-filter-date="${toDateInput(day)}">${day.getDate()}</button>`;
+}
+
+function selectCalendarDate(value, detailsId = "dateRangeSelect") {
+  const details = $(detailsId);
+  dateRangePresetLabel = "";
+  calendarHoverDate = "";
+  const from = $("filterFrom").value;
+  const to = $("filterTo").value;
+  const hasCompleteRange = Boolean(from && to);
+  const shouldStartNewRange = calendarStartNewRangeOnNextDate || hasCompleteRange;
+  calendarStartNewRangeOnNextDate = false;
+  if (!from || shouldStartNewRange) {
+    $("filterFrom").value = value;
+    $("filterTo").value = "";
+    if (details) details.open = true;
+  } else if (value < from) {
+    $("filterFrom").value = value;
+    $("filterTo").value = from;
+  } else {
+    $("filterTo").value = value;
+    if (details) details.open = false;
+  }
+  state.filters.from = $("filterFrom").value;
+  state.filters.to = $("filterTo").value;
+  calendarBaseDate = new Date(parseDateInput($("filterFrom").value || value).getFullYear(), parseDateInput($("filterFrom").value || value).getMonth(), 1);
+  updateDateRangeSummary();
+  renderCalendarMonths();
 }
 
 function updateTagSuggestions(value = "") {
@@ -212,7 +491,8 @@ function renderEntries() {
     .join(", ") || "0,00";
 
   $("recentEntries").innerHTML = state.entries.slice(0, 6).map(entryRow).join("") || `<p class="muted">Записей пока нет.</p>`;
-  $("entriesTable").innerHTML = state.entries.map(tableRow).join("") || `<tr><td colspan="8" class="muted">Ничего не найдено.</td></tr>`;
+  const tableEntries = sortRows(state.entries, "entries", entrySortValue);
+  $("entriesTable").innerHTML = tableEntries.map(tableRow).join("") || `<tr><td colspan="8" class="muted">Ничего не найдено.</td></tr>`;
 }
 
 function entryRow(entry) {
@@ -253,20 +533,21 @@ function tableRow(entry) {
 }
 
 function renderClients() {
+  const clients = sortRows(state.clients, "clients", clientSortValue);
   $("clientsList").innerHTML = `
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Клиент</th>
-            <th>Контакт</th>
-            <th>Email</th>
-            <th>Валюта</th>
+            <th>${sortHeader("clients", "name", "Клиент")}</th>
+            <th>${sortHeader("clients", "contact", "Контакт")}</th>
+            <th>${sortHeader("clients", "email", "Email")}</th>
+            <th>${sortHeader("clients", "currency", "Валюта")}</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${state.clients.map((client) => `
+          ${clients.map((client) => `
             <tr>
               <td>${escapeHtml(client.name)}</td>
               <td>${escapeHtml(client.contact_name || "Контакт не указан")}</td>
@@ -287,19 +568,20 @@ function renderClients() {
 }
 
 function renderProjects() {
+  const projects = sortRows(state.projects, "projects", projectSortValue);
   $("projectsList").innerHTML = `
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Проект</th>
-            <th>Клиент</th>
-            <th>Ставка</th>
+            <th>${sortHeader("projects", "name", "Проект")}</th>
+            <th>${sortHeader("projects", "client", "Клиент")}</th>
+            <th>${sortHeader("projects", "rate", "Ставка")}</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${state.projects.map((project) => `
+          ${projects.map((project) => `
             <tr>
               <td>${escapeHtml(project.name)}</td>
               <td>${escapeHtml(project.client_name)}</td>
@@ -318,10 +600,164 @@ function renderProjects() {
   `;
 }
 
+function groupEntrySeconds(entries, keyFn) {
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const key = keyFn(entry);
+    const item = groups.get(key) || { key, seconds: 0, entries: [] };
+    item.seconds += entry.duration_seconds;
+    item.entries.push(entry);
+    groups.set(key, item);
+  });
+  return [...groups.values()].sort((a, b) => b.seconds - a.seconds);
+}
+
+function dashboardPalette(index) {
+  return ["#ff5722", "#5c6bc0", "#26a69a", "#ffb300", "#8e44ad", "#78909c"][index % 6];
+}
+
+function activeDashboardRange() {
+  const from = parseDateInput(state.filters.from || "");
+  const to = parseDateInput(state.filters.to || "");
+  if (from && to) return { from, to };
+  if (from) return { from, to: from };
+  if (to) return { from: to, to };
+  return null;
+}
+
+function dashboardDayKeys(entries) {
+  const range = activeDashboardRange();
+  if (range) {
+    const keys = [];
+    for (let day = new Date(range.from); day <= range.to; day = addDays(day, 1)) {
+      keys.push(toDateInput(day));
+      if (keys.length >= 31) break;
+    }
+    return keys;
+  }
+  return [...new Set(entries.map((entry) => entry.date))].sort().slice(-14);
+}
+
+function renderDashboardDayChart(entries, projectColors) {
+  const dayKeys = dashboardDayKeys(entries);
+  if (!dayKeys.length) {
+    $("dashboardDayChart").innerHTML = `<p class="muted dashboard-empty">Нет данных за выбранный период.</p>`;
+    return;
+  }
+  const totalsByDay = new Map(dayKeys.map((day) => [day, 0]));
+  const projectsByDay = new Map(dayKeys.map((day) => [day, new Map()]));
+  entries.forEach((entry) => {
+    if (!projectsByDay.has(entry.date)) return;
+    totalsByDay.set(entry.date, (totalsByDay.get(entry.date) || 0) + entry.duration_seconds);
+    const projects = projectsByDay.get(entry.date);
+    projects.set(entry.project_name, (projects.get(entry.project_name) || 0) + entry.duration_seconds);
+  });
+  const maxSeconds = Math.max(1, ...totalsByDay.values());
+  $("dashboardDayChart").innerHTML = dayKeys.map((day) => {
+    const total = totalsByDay.get(day) || 0;
+    const height = Math.max(total ? 8 : 1, Math.round((total / maxSeconds) * 150));
+    const stacks = [...(projectsByDay.get(day) || new Map()).entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([project, seconds]) => {
+        const percent = total ? (seconds / total) * 100 : 0;
+        return `<span style="height:${percent}%;background:${projectColors.get(project) || dashboardPalette(0)}" title="${escapeHtml(project)} · ${durationFromSeconds(seconds)}"></span>`;
+      }).join("");
+    return `
+      <div class="day-bar">
+        <strong>${durationFromSeconds(total)}</strong>
+        <div class="day-bar-track" style="height:${height}px">${stacks || `<span class="empty-stack"></span>`}</div>
+        <small>${escapeHtml(formatShortDate(day))}</small>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDashboardBreakdown(projectGroups, totalSeconds, projectColors) {
+  if (!totalSeconds) {
+    $("dashboardDonut").style.background = "#edf3f7";
+    $("dashboardDonut").innerHTML = `<span>00:00:00</span>`;
+    $("dashboardBreakdown").innerHTML = `<p class="muted">Проектов за период нет.</p>`;
+    return;
+  }
+  let cursor = 0;
+  const segments = projectGroups.map((group) => {
+    const start = cursor;
+    cursor += (group.seconds / totalSeconds) * 100;
+    return `${projectColors.get(group.key)} ${start}% ${cursor}%`;
+  });
+  $("dashboardDonut").style.background = `conic-gradient(${segments.join(", ")})`;
+  $("dashboardDonut").innerHTML = `<span>${durationFromSeconds(totalSeconds)}</span>`;
+  $("dashboardBreakdown").innerHTML = projectGroups.slice(0, 6).map((group) => {
+    const sample = group.entries[0];
+    const percent = totalSeconds ? (group.seconds / totalSeconds) * 100 : 0;
+    return `
+      <div class="breakdown-row">
+        <div>
+          <strong>${escapeHtml(group.key)}</strong>
+          <span>${escapeHtml(sample.client_name)}</span>
+        </div>
+        <code>${durationFromSeconds(group.seconds)}</code>
+        <div class="breakdown-track"><span style="width:${percent}%;background:${projectColors.get(group.key)}"></span></div>
+        <em>${percent.toFixed(1).replace(".", ",")}%</em>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDashboardActivities(entries, totalSeconds) {
+  const clients = sortRows(
+    groupEntrySeconds(entries, (entry) => entry.client_name).map((client) => ({
+      ...client,
+      latest: client.entries.slice().sort((a, b) => String(b.start_at).localeCompare(String(a.start_at)))[0],
+    })),
+    "dashboardActivities",
+    dashboardActivitySortValue,
+  );
+  const maxSeconds = Math.max(1, ...clients.map((client) => client.seconds));
+  $("dashboardActivities").innerHTML = clients.map((client) => {
+    const latest = client.latest;
+    const width = Math.round((client.seconds / maxSeconds) * 100);
+    const percent = totalSeconds ? (client.seconds / totalSeconds) * 100 : 0;
+    return `
+      <tr>
+        <td>
+          <div class="activity-client">
+            <span>${escapeHtml(client.key.slice(0, 2).toUpperCase())}</span>
+            <strong>${escapeHtml(client.key)}</strong>
+          </div>
+        </td>
+        <td>
+          <strong>${escapeHtml(latest.description || latest.project_name)}</strong><br>
+          <small class="muted">${escapeHtml(latest.project_name)} · ${escapeHtml(latest.date)} · ${latest.duration}</small>
+        </td>
+        <td>
+          <div class="activity-total">
+            <code>${durationFromSeconds(client.seconds)}</code>
+            <div class="breakdown-track"><span style="width:${width}%"></span></div>
+            <em>${percent.toFixed(1).replace(".", ",")}%</em>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="3" class="muted">Активностей пока нет.</td></tr>`;
+}
+
 function renderDashboard() {
+  const entries = state.entries;
+  const totalSeconds = entries.reduce((sum, entry) => sum + entry.duration_seconds, 0);
+  const projectGroups = groupEntrySeconds(entries, (entry) => entry.project_name);
+  const clientGroups = groupEntrySeconds(entries, (entry) => entry.client_name);
+  const projectColors = new Map(projectGroups.map((group, index) => [group.key, dashboardPalette(index)]));
   $("dashClients").textContent = state.clients.length;
   $("dashProjects").textContent = state.projects.length;
-  $("dashEntries").textContent = state.entries.length;
+  $("dashEntries").textContent = entries.length;
+  $("dashTotalTime").textContent = durationFromSeconds(totalSeconds);
+  $("dashTopProject").textContent = projectGroups[0]?.key || "—";
+  $("dashTopClient").textContent = clientGroups[0]?.key || "—";
+  $("dashboardActivityCount").textContent = `${entries.length} ${entries.length === 1 ? "запись" : "записей"}`;
+  renderDashboardDayChart(entries, projectColors);
+  renderDashboardBreakdown(projectGroups, totalSeconds, projectColors);
+  renderDashboardActivities(entries, totalSeconds);
 }
 
 function openEntryDialog(entry = null, defaults = {}) {
@@ -371,14 +807,28 @@ async function saveEntry(event) {
     start_at: $("entryStart").value,
     end_at: $("entryEnd").value,
   };
-  if (state.running && !id && payload.start_at === state.running.start_at) {
-    state.running = { ...state.running, ...payload };
-    localStorage.setItem("runningTimer", JSON.stringify(state.running));
+  if (state.completingTimer && state.running && payload.start_at === state.running.start_at) {
+    payload.end_at = ensureEndAfterStart(payload.start_at, payload.end_at);
+    $("entryEnd").value = payload.end_at;
+  }
+  if (state.running && !id && payload.start_at === state.running.start_at && !state.completingTimer) {
+    const result = await api("/api/timer", { method: "PUT", body: JSON.stringify(payload) });
+    state.running = result.running;
     $("entryDialog").close();
     renderTimer();
     return;
   }
-  await api(id ? `/api/entries/${id}` : "/api/entries", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+  try {
+    await api(id ? `/api/entries/${id}` : "/api/entries", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+  } catch (error) {
+    alert(error.message);
+    return;
+  }
+  if (state.completingTimer && state.running && payload.start_at === state.running.start_at) {
+    state.running = null;
+    state.completingTimer = false;
+    await api("/api/timer", { method: "DELETE" }).catch(() => {});
+  }
   $("entryDialog").close();
   await loadState();
 }
@@ -411,19 +861,20 @@ async function saveProject(event) {
   await loadState();
 }
 
-function startTimer(defaults = {}) {
+async function startTimer(defaults = {}) {
   if (!state.clients.length || !state.projects.length) {
     alert("Сначала добавь клиента и проект. Без них трекер будет считать воздух, а воздух плохо оплачивается.");
     return;
   }
-  state.running = {
+  const payload = {
     client_id: defaults.client_id || state.clients[0]?.id || "",
     project_id: defaults.project_id || state.projects.find((p) => String(p.client_id) === String(defaults.client_id))?.id || state.projects[0]?.id || "",
     description: defaults.description || "",
     tags: defaults.tags || "",
     start_at: toLocalInput(new Date()),
   };
-  localStorage.setItem("runningTimer", JSON.stringify(state.running));
+  const result = await api("/api/timer/start", { method: "POST", body: JSON.stringify(payload) });
+  state.running = result.running;
   renderTimer();
   openEntryDialog(null, { ...state.running, end_at: toLocalInput(new Date(Date.now() + 60000)) });
 }
@@ -434,16 +885,13 @@ async function stopTimer() {
   const end = ensureEndAfterStart(running.start_at);
   const payload = { ...running, end_at: end };
   try {
-    await api("/api/entries", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    await api("/api/timer", { method: "PUT", body: JSON.stringify(running) });
+    await api("/api/timer/stop", { method: "POST", body: JSON.stringify({ end_at: end }) });
     state.running = null;
-    localStorage.removeItem("runningTimer");
     await loadState();
   } catch (error) {
     state.running = running;
-    localStorage.setItem("runningTimer", JSON.stringify(running));
+    state.completingTimer = true;
     renderTimer();
     openEntryDialog(null, payload);
     alert(`${error.message}. Я вернул таймер, заполни детали и сохрани запись.`);
@@ -479,14 +927,23 @@ async function applyFilters({ replace = false } = {}) {
   await loadState();
 }
 
+async function applyReportFiltersWhenReady() {
+  if (!$("filterFrom").value || !$("filterTo").value) return;
+  await applyFilters();
+}
+
 async function resetFilters() {
   state.filters = {};
+  calendarStartNewRangeOnNextDate = false;
+  dateRangePresetLabel = "";
   $("filterFrom").value = "";
   $("filterTo").value = "";
   $("filterClient").value = "";
   $("filterProject").value = "";
   document.querySelectorAll("#tagFilters input").forEach((input) => input.checked = false);
-  $("tagSummary").textContent = "Все теги";
+  $("tagSummary").textContent = "Все";
+  updateDateRangeSummary();
+  renderCalendarMonths();
   writeFiltersToUrl(false);
   await loadState();
 }
@@ -495,33 +952,123 @@ function setPeriod(kind) {
   const now = new Date();
   let start;
   let end;
-  if (kind === "month") {
+  if (kind === "today") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    end = start;
+    dateRangePresetLabel = "Сегодня";
+  } else if (kind === "month") {
     start = new Date(now.getFullYear(), now.getMonth(), 1);
     end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    dateRangePresetLabel = "Этот месяц";
   } else if (kind === "prev") {
     start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     end = new Date(now.getFullYear(), now.getMonth(), 0);
+    dateRangePresetLabel = "Прошлый месяц";
+  } else if (kind === "two-weeks") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+    end = now;
+    dateRangePresetLabel = "Последние две недели";
   } else {
     start = new Date(now.getFullYear(), 0, 1);
     end = now;
+    dateRangePresetLabel = "С начала года";
   }
   $("filterFrom").value = toDateInput(start);
   $("filterTo").value = toDateInput(end);
+  calendarStartNewRangeOnNextDate = false;
+  state.filters.from = $("filterFrom").value;
+  state.filters.to = $("filterTo").value;
+  calendarBaseDate = new Date(start.getFullYear(), start.getMonth(), 1);
+  updateDateRangeSummary();
+  renderCalendarMonths();
 }
 
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("button, label, a");
+  document.querySelectorAll(".date-range-select[open], .tag-select[open]").forEach((details) => {
+    if (!details.contains(event.target)) details.open = false;
+  });
   if (!target) return;
-  if (target.dataset.view) setView(target.dataset.view);
+  if (target.dataset.sortTable && target.dataset.sortKey) {
+    setTableSort(target.dataset.sortTable, target.dataset.sortKey);
+    return;
+  }
+  if (target.classList.contains("menu-toggle")) {
+    const sidebar = document.querySelector(".sidebar");
+    const isOpen = sidebar.classList.toggle("menu-open");
+    target.setAttribute("aria-expanded", String(isOpen));
+    target.setAttribute("aria-label", isOpen ? "Закрыть меню" : "Открыть меню");
+    target.innerHTML = `<i class="fa-solid ${isOpen ? "fa-xmark" : "fa-bars"}"></i>`;
+    return;
+  }
+  if (target.dataset.view) {
+    setView(target.dataset.view);
+    const sidebar = document.querySelector(".sidebar");
+    const menuToggle = document.querySelector(".menu-toggle");
+    if (sidebar?.classList.contains("menu-open")) {
+      sidebar.classList.remove("menu-open");
+      menuToggle?.setAttribute("aria-expanded", "false");
+      menuToggle?.setAttribute("aria-label", "Открыть меню");
+      if (menuToggle) menuToggle.innerHTML = `<i class="fa-solid fa-bars"></i>`;
+    }
+  }
   if (target.dataset.viewJump) setView(target.dataset.viewJump);
   if (target.id === "openEntry") openEntryDialog();
   if (target.id === "addClient") openClientDialog();
   if (target.id === "addProject") openProjectDialog();
-  if (target.id === "periodMonth") setPeriod("month");
-  if (target.id === "periodPrevMonth") setPeriod("prev");
-  if (target.id === "periodYear") setPeriod("year");
-  if (target.id === "applyFilters") {
+  if (target.id === "periodToday") {
+    setPeriod("today");
     await applyFilters();
+  }
+  if (target.id === "periodMonth") {
+    setPeriod("month");
+    await applyFilters();
+  }
+  if (target.id === "periodPrevMonth") {
+    setPeriod("prev");
+    await applyFilters();
+  }
+  if (target.id === "periodTwoWeeks") {
+    setPeriod("two-weeks");
+    await applyFilters();
+  }
+  if (target.id === "periodYear") {
+    setPeriod("year");
+    await applyFilters();
+  }
+  if (target.id === "dashboardPeriodToday") {
+    setPeriod("today");
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  }
+  if (target.id === "dashboardPeriodMonth") {
+    setPeriod("month");
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  }
+  if (target.id === "dashboardPeriodPrevMonth") {
+    setPeriod("prev");
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  }
+  if (target.id === "dashboardPeriodTwoWeeks") {
+    setPeriod("two-weeks");
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  }
+  if (target.id === "dashboardPeriodYear") {
+    setPeriod("year");
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  }
+  if (target.dataset.calendarShift) {
+    calendarBaseDate = addMonths(calendarBaseDate, Number(target.dataset.calendarShift));
+    renderCalendarMonths();
   }
   if (target.id === "resetFilters") {
     await resetFilters();
@@ -531,7 +1078,7 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.editProject) openProjectDialog(state.projects.find((project) => String(project.id) === target.dataset.editProject));
   if (target.dataset.repeat) {
     const entry = state.entries.find((item) => String(item.id) === target.dataset.repeat);
-    startTimer(entry);
+    await startTimer(entry);
   }
   if (target.dataset.deleteEntry && confirm("Удалить time entry?")) {
     await api(`/api/entries/${target.dataset.deleteEntry}`, { method: "DELETE" });
@@ -549,19 +1096,83 @@ document.addEventListener("click", async (event) => {
 
 $("timerButton").addEventListener("click", async () => {
   if (state.running) await stopTimer();
-  else startTimer();
+  else await startTimer();
 });
 
 $("entryClient").addEventListener("change", () => updateEntryProjects());
 $("entryTags").addEventListener("input", (event) => updateTagSuggestions(event.target.value));
-$("filterClient").addEventListener("change", () => {
+$("filterClient").addEventListener("change", async () => {
   $("filterProject").innerHTML = optionList(filteredProjects($("filterClient").value));
   $("filterProject").value = "";
+  await applyFilters();
 });
-$("tagFilters").addEventListener("change", () => {
+$("filterProject").addEventListener("change", async () => {
+  await applyFilters();
+});
+$("tagFilters").addEventListener("change", async () => {
   const selected = [...document.querySelectorAll("#tagFilters input:checked")].map((input) => input.value);
-  $("tagSummary").textContent = selected.length ? `Теги: ${selected.join(", ")}` : "Все теги";
+  $("tagSummary").textContent = selected.length ? selected.map(tagLabel).join(", ") : "Все";
+  await applyFilters();
 });
+$("dateRangeSelect").addEventListener("toggle", () => {
+  if (!$("dateRangeSelect").open) return;
+  calendarStartNewRangeOnNextDate = Boolean($("filterFrom").value && $("filterTo").value);
+});
+if ($("dashboardDateRangeSelect")) {
+  $("dashboardDateRangeSelect").addEventListener("toggle", () => {
+    if (!$("dashboardDateRangeSelect").open) return;
+    calendarStartNewRangeOnNextDate = Boolean($("filterFrom").value && $("filterTo").value);
+  });
+}
+
+function setupDateRangeCalendar(containerId, detailsId, autoApply = false) {
+  const container = $(containerId);
+  if (!container) return;
+  const applyDashboardDate = async () => {
+    if (!autoApply || !$("filterFrom").value || !$("filterTo").value) return;
+    state.view = "dashboard";
+    writeFiltersToUrl(false);
+    await loadState();
+  };
+  container.addEventListener("mouseover", (event) => {
+    const day = event.target.closest("[data-filter-date]");
+    if (!day || !$("filterFrom").value || $("filterTo").value) return;
+    if (calendarHoverDate === day.dataset.filterDate) return;
+    calendarHoverDate = day.dataset.filterDate;
+    renderCalendarMonths();
+  });
+  container.addEventListener("pointerdown", async (event) => {
+    const day = event.target.closest("[data-filter-date]");
+    if (!day) return;
+    event.preventDefault();
+    event.stopPropagation();
+    calendarSuppressClick = true;
+    selectCalendarDate(day.dataset.filterDate, detailsId);
+    await applyDashboardDate();
+    if (!autoApply) await applyReportFiltersWhenReady();
+  });
+  container.addEventListener("click", async (event) => {
+    const day = event.target.closest("[data-filter-date]");
+    if (!day) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (calendarSuppressClick) {
+      calendarSuppressClick = false;
+      return;
+    }
+    selectCalendarDate(day.dataset.filterDate, detailsId);
+    await applyDashboardDate();
+    if (!autoApply) await applyReportFiltersWhenReady();
+  });
+  container.addEventListener("mouseleave", () => {
+    if (!calendarHoverDate) return;
+    calendarHoverDate = "";
+    renderCalendarMonths();
+  });
+}
+
+setupDateRangeCalendar("calendarMonths", "dateRangeSelect");
+setupDateRangeCalendar("dashboardCalendarMonths", "dashboardDateRangeSelect", true);
 
 window.addEventListener("popstate", async () => {
   readFiltersFromUrl();
@@ -589,5 +1200,9 @@ $("importPdf").addEventListener("change", async (event) => {
 });
 
 setInterval(tickTimer, 1000);
+setInterval(() => {
+  if (!document.querySelector("dialog[open]")) loadState().catch(() => {});
+}, 5000);
+localStorage.removeItem("runningTimer");
 readFiltersFromUrl();
 loadState().catch((error) => alert(error.message));

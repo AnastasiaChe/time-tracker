@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Time Tracker</title>
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <button class="timer-button" id="timerButton" type="button">
+        <span id="timerIcon" class="fa-solid fa-play" aria-hidden="true"></span>
+        <span id="timerLabel">Старт</span>
+        <strong id="timerClock">00:00:00</strong>
+      </button>
+
+      <div class="field select-field">
+        <select id="clientSelect" aria-label="Client"></select>
+      </div>
+      <div class="field select-field">
+        <select id="projectSelect" aria-label="Project"></select>
+      </div>
+      <div class="field select-field">
+        <input id="tagsInput" list="tagSuggestions" placeholder="Теги" autocomplete="off">
+      </div>
+      <datalist id="tagSuggestions"></datalist>
+      <textarea id="descriptionInput" placeholder="Заметки"></textarea>
+
+      <section class="latest">
+        <h1>Последние записи</h1>
+        <div id="latestEntries"></div>
+      </section>
+
+      <p class="status" id="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

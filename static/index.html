@@ -6,7 +6,7 @@
     <title>Anastasia Che Time Tracker</title>
     <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
-    <link rel="stylesheet" href="/static/styles.css?v=20260618-print">
+    <link rel="stylesheet" href="/static/styles.css?v=20260620-sort">
   </head>
   <body>
     <div id="app">
@@ -14,12 +14,15 @@
         <button class="brand-link" data-view="tracker" aria-label="Открыть трекер">
           <img class="brand" src="/static/assets/logo-horizontal.svg" alt="Anastasia Che">
         </button>
+        <button class="menu-toggle" type="button" aria-label="Открыть меню" aria-expanded="false">
+          <i class="fa-solid fa-bars"></i>
+        </button>
         <nav>
+          <button class="nav-item" data-view="dashboard"><i class="fa-solid fa-gauge"></i><span>Дашборд</span></button>
           <button class="nav-item active" data-view="tracker"><i class="fa-solid fa-clock"></i><span>Трекер</span></button>
           <button class="nav-item" data-view="reports"><i class="fa-solid fa-table-list"></i><span>Отчеты</span></button>
           <button class="nav-item" data-view="clients"><i class="fa-solid fa-address-book"></i><span>Клиенты</span></button>
           <button class="nav-item" data-view="projects"><i class="fa-solid fa-diagram-project"></i><span>Проекты</span></button>
-          <button class="nav-item" data-view="dashboard"><i class="fa-solid fa-chart-simple"></i><span>Дашборд</span></button>
         </nav>
       </aside>
 
@@ -70,30 +73,54 @@
         </section>
 
         <section id="reports" class="view">
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Фильтр</h2>
-              <div class="actions">
-                <button id="periodMonth" class="ghost">Этот месяц</button>
-                <button id="periodPrevMonth" class="ghost">Предыдущий месяц</button>
-                <button id="periodYear" class="ghost">С начала года</button>
-              </div>
-            </div>
-            <div class="filters">
-              <label>Дата от <input id="filterFrom" type="date"></label>
-              <label>Дата до <input id="filterTo" type="date"></label>
-              <label>Клиент <select id="filterClient"></select></label>
-              <label>Проект <select id="filterProject"></select></label>
-              <label>Теги
+          <div class="panel filter-panel">
+            <div class="filter-fieldset">
+              <label class="filter-field">Дата
+                <details id="dateRangeSelect" class="date-range-select">
+                  <summary class="filter-control date-range-summary">
+                    <span id="dateRangeText">Все даты</span>
+                    <i class="fa-solid fa-calendar-days"></i>
+                  </summary>
+                  <div class="date-range-popover">
+                    <div class="preset-panel">
+                      <button id="periodToday" type="button" class="secondary">Сегодня</button>
+                      <button id="periodMonth" type="button" class="secondary">Этот месяц</button>
+                      <button id="periodPrevMonth" type="button" class="secondary">Предыдущий месяц</button>
+                      <button id="periodTwoWeeks" type="button" class="secondary">Последние две недели</button>
+                      <button id="periodYear" type="button" class="secondary">С начала года</button>
+                    </div>
+                    <div id="calendarMonths" class="calendar-months"></div>
+                  </div>
+                </details>
+                <input id="filterFrom" type="hidden">
+                <input id="filterTo" type="hidden">
+              </label>
+              <label class="filter-field">Клиент
+                <div class="filter-control select-control">
+                  <select id="filterClient"></select>
+                </div>
+              </label>
+              <label class="filter-field">Проект
+                <div class="filter-control select-control">
+                  <select id="filterProject"></select>
+                </div>
+              </label>
+              <label class="filter-field">Теги
                 <details class="tag-select">
-                  <summary id="tagSummary">Все теги</summary>
+                  <summary id="tagSummary" class="filter-control">Все</summary>
                   <div id="tagFilters" class="tag-filters"></div>
                 </details>
               </label>
+              <div class="filter-actions">
+                <button id="resetFilters" class="secondary icon-button" type="button" aria-label="Сбросить фильтры" title="Сбросить фильтры"><i class="fa-solid fa-rotate-left"></i></button>
+              </div>
             </div>
-            <div class="actions">
-              <button id="applyFilters">Применить</button>
-              <button id="resetFilters" class="secondary">Сбросить</button>
+          </div>
+
+          <div class="summary-grid report-summary">
+            <div class="metric-card"><span>Всего часов</span><strong id="totalDuration">00:00:00</strong></div>
+            <div class="metric-card"><span>К оплате</span><strong id="totalAmount">0.00</strong></div>
+            <div class="report-actions">
               <form id="printForm" class="inline-form" action="/print-report" method="get" target="_blank">
                 <span id="printFields"></span>
                 <button id="printReport" type="submit" class="secondary"><i class="fa-solid fa-print"></i> Печать</button>
@@ -102,23 +129,18 @@
             </div>
           </div>
 
-          <div class="summary-grid">
-            <div class="metric-card"><span>Всего часов</span><strong id="totalDuration">00:00:00</strong></div>
-            <div class="metric-card"><span>К оплате</span><strong id="totalAmount">0.00</strong></div>
-          </div>
-
           <div class="panel table-panel">
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Дата</th>
-                    <th>Клиент</th>
-                    <th>Проект</th>
-                    <th>Комментарий</th>
-                    <th>Время</th>
-                    <th>Длительность</th>
-                    <th>Сумма</th>
+                    <th><button class="sort-button active" type="button" data-sort-table="entries" data-sort-key="date" aria-sort="desc"><span>Дата</span><i class="fa-solid fa-chevron-down"></i></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="client" aria-sort="none"><span>Клиент</span></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="project" aria-sort="none"><span>Проект</span></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="description" aria-sort="none"><span>Комментарий</span></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="time" aria-sort="none"><span>Время</span></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="duration" aria-sort="none"><span>Длительность</span></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="entries" data-sort-key="amount" aria-sort="none"><span>Сумма</span></button></th>
                     <th></th>
                   </tr>
                 </thead>
@@ -149,16 +171,70 @@
         </section>
 
         <section id="dashboard" class="view">
-          <div class="summary-grid">
+          <div class="summary-grid dashboard-summary">
             <div class="metric-card"><span>Клиентов</span><strong id="dashClients">0</strong></div>
             <div class="metric-card"><span>Проектов</span><strong id="dashProjects">0</strong></div>
             <div class="metric-card"><span>Записей</span><strong id="dashEntries">0</strong></div>
           </div>
-          <div class="panel"><h2>Дашборд</h2><p class="muted">Пока только базовые показатели. Графики можно нарастить, когда появятся реальные данные.</p></div>
+
+          <div class="dashboard-toolbar">
+            <label class="filter-field dashboard-date-field">Период
+              <details id="dashboardDateRangeSelect" class="date-range-select">
+                <summary class="filter-control date-range-summary">
+                  <span id="dashboardDateRangeText">Все даты</span>
+                  <i class="fa-solid fa-calendar-days"></i>
+                </summary>
+                <div class="date-range-popover dashboard-date-popover">
+                  <div class="preset-panel">
+                    <button id="dashboardPeriodToday" type="button" class="secondary">Сегодня</button>
+                    <button id="dashboardPeriodMonth" type="button" class="secondary">Этот месяц</button>
+                    <button id="dashboardPeriodPrevMonth" type="button" class="secondary">Предыдущий месяц</button>
+                    <button id="dashboardPeriodTwoWeeks" type="button" class="secondary">Последние две недели</button>
+                    <button id="dashboardPeriodYear" type="button" class="secondary">С начала года</button>
+                  </div>
+                  <div id="dashboardCalendarMonths" class="calendar-months"></div>
+                </div>
+              </details>
+            </label>
+          </div>
+
+          <div class="dashboard-hero">
+            <div class="dashboard-kpi"><span>Total time</span><strong id="dashTotalTime">00:00:00</strong></div>
+            <div class="dashboard-kpi"><span>Top Project</span><strong id="dashTopProject">—</strong></div>
+            <div class="dashboard-kpi"><span>Top Client</span><strong id="dashTopClient">—</strong></div>
+          </div>
+
+          <div class="panel dashboard-panel">
+            <div id="dashboardDayChart" class="day-chart"></div>
+            <div class="dashboard-split">
+              <div class="donut-card">
+                <div id="dashboardDonut" class="donut-chart"><span>00:00:00</span></div>
+              </div>
+              <div id="dashboardBreakdown" class="dashboard-breakdown"></div>
+            </div>
+          </div>
+
+          <div class="panel dashboard-activity-panel">
+            <div class="panel-head">
+              <h2>Активности</h2>
+              <span id="dashboardActivityCount" class="muted">0 записей</span>
+            </div>
+            <div class="table-wrap">
+              <table class="dashboard-activity-table">
+                <thead>
+                  <tr>
+                    <th><button class="sort-button" type="button" data-sort-table="dashboardActivities" data-sort-key="client" aria-sort="none"><span>Клиент</span></button></th>
+                    <th><button class="sort-button active" type="button" data-sort-table="dashboardActivities" data-sort-key="last_activity" aria-sort="desc"><span>Последняя активность</span><i class="fa-solid fa-chevron-down"></i></button></th>
+                    <th><button class="sort-button" type="button" data-sort-table="dashboardActivities" data-sort-key="total" aria-sort="none"><span>Всего за период</span></button></th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardActivities"></tbody>
+              </table>
+            </div>
+          </div>
         </section>
       </main>
     </div>
-
     <dialog id="entryDialog">
       <form method="dialog" class="modal-form" id="entryForm">
         <h2 id="entryDialogTitle">Time entry</h2>
@@ -209,6 +285,6 @@
       </form>
     </dialog>
 
-    <script src="/static/app.js?v=20260618-timer-fix"></script>
+    <script src="/static/app.js?v=20260621-calendar-today"></script>
   </body>
 </html>
