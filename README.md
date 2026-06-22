@@ -35,33 +35,42 @@
 
    Если Python не установлен, поставьте его с [python.org](https://www.python.org/downloads/macos/).
 
-2. Скачайте проект:
+2. Скачайте проект одним из способов.
+
+   Простой способ: откройте страницу проекта на GitHub, нажмите `Code` → `Download ZIP`, распакуйте архив в удобную папку. Если папка после распаковки называется `time-tracker-main`, можно переименовать ее в `time-tracker` или использовать реальное имя папки в команде `cd`.
+
+   Способ через Git:
 
    ```bash
    git clone https://github.com/AnastasiaChe/time-tracker.git
-   cd time-tracker
    ```
 
-3. Создайте виртуальное окружение:
+3. Перейдите в папку проекта:
+
+   ```bash
+   cd /ваш/путь/до/папки/time-tracker
+   ```
+
+4. Создайте виртуальное окружение:
 
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    ```
 
-4. Установите зависимости:
+5. Установите зависимости:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-5. Добавьте тестового клиента и демо-записи:
+6. Добавьте тестового клиента и демо-записи:
 
    ```bash
    python app.py --seed-demo
    ```
 
-6. Откройте приложение:
+7. Откройте приложение:
 
    ```text
    http://127.0.0.1:8000
@@ -73,14 +82,23 @@
 
    Во время установки включите галочку `Add python.exe to PATH`.
 
-2. Откройте PowerShell и скачайте проект:
+2. Скачайте проект одним из способов.
+
+   Простой способ: откройте страницу проекта на GitHub, нажмите `Code` → `Download ZIP`, распакуйте архив в удобную папку. Если папка после распаковки называется `time-tracker-main`, можно переименовать ее в `time-tracker` или использовать реальное имя папки в команде `cd`.
+
+   Способ через Git:
 
    ```powershell
    git clone https://github.com/AnastasiaChe/time-tracker.git
-   cd time-tracker
    ```
 
-3. Создайте виртуальное окружение:
+3. Откройте PowerShell и перейдите в папку проекта:
+
+   ```powershell
+   cd C:\ваш\путь\до\папки\time-tracker
+   ```
+
+4. Создайте виртуальное окружение:
 
    ```powershell
    py -3 -m venv .venv
@@ -94,19 +112,19 @@
    .\.venv\Scripts\Activate.ps1
    ```
 
-4. Установите зависимости:
+5. Установите зависимости:
 
    ```powershell
    pip install -r requirements.txt
    ```
 
-5. Добавьте тестового клиента и демо-записи:
+6. Добавьте тестового клиента и демо-записи:
 
    ```powershell
    python app.py --seed-demo
    ```
 
-6. Откройте приложение:
+7. Откройте приложение:
 
    ```text
    http://127.0.0.1:8000
@@ -114,21 +132,41 @@
 
 ## Запуск
 
-Обычный запуск:
+Каждый раз перед запуском нужно перейти в папку проекта.
+
+macOS:
 
 ```bash
+cd /ваш/путь/до/папки/time-tracker
+source .venv/bin/activate
 python app.py
+```
+
+Windows PowerShell:
+
+```powershell
+cd C:\ваш\путь\до\папки\time-tracker
+.\.venv\Scripts\Activate.ps1
+python app.py
+```
+
+После запуска откройте в браузере:
+
+```text
+http://127.0.0.1:8000
 ```
 
 Запуск на другом порту:
 
 ```bash
+cd /ваш/путь/до/папки/time-tracker
 python app.py 8080
 ```
 
 Запуск с демо-данными:
 
 ```bash
+cd /ваш/путь/до/папки/time-tracker
 python app.py --seed-demo
 ```
 
@@ -139,6 +177,7 @@ python app.py --seed-demo
 - Основная база: `data/time_tracker.sqlite3`
 - Загруженные логотипы: `static/uploads/`
 - Стандартные логотипы: `static/assets/`
+- Локальные шрифты: `static/vendor/fonts/`
 - Интерфейс: `static/index.html`, `static/app.js`, `static/styles.css`
 - Сервер и работа с базой: `app.py`
 
@@ -154,11 +193,22 @@ python app.py --seed-demo
 
 Поддерживаются PNG, JPG, WEBP и SVG.
 
+## Шрифты и иконки
+
+Пользователю не нужно отдельно устанавливать шрифты или Font Awesome.
+
+- `Roboto` для интерфейса лежит в `static/vendor/fonts/roboto/`.
+- `Mulish` для печатных отчетов и PDF лежит в `static/vendor/fonts/mulish/`.
+- Font Awesome лежит в `static/vendor/fontawesome/` и `chrome-extension/vendor/fontawesome/`.
+
+Все подключено локально из репозитория, без обращения к Google Fonts или CDN.
+
 ## Chrome extension
 
 Папка `chrome-extension/` содержит локальное расширение для Chrome. Расширение работает вместе с локальным сервером, поэтому сначала запустите приложение:
 
 ```bash
+cd /ваш/путь/до/папки/time-tracker
 python app.py
 ```
 
@@ -192,3 +242,5 @@ http://127.0.0.1:8000
 Проект доступен бесплатно для личного некоммерческого использования. Коммерческое использование, перепродажа, публикация модифицированных копий и использование в продуктах для клиентов требуют отдельного письменного разрешения.
 
 Полный текст: [LICENSE](LICENSE).
+
+Сторонние шрифты и Font Awesome описаны отдельно: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

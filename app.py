@@ -44,6 +44,19 @@ UPLOAD_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 
 def register_pdf_fonts() -> None:
     global PDF_FONT, PDF_FONT_BOLD
+    bundled_regular = ROOT / "static" / "vendor" / "fonts" / "mulish" / "Mulish-Regular.ttf"
+    bundled_bold = ROOT / "static" / "vendor" / "fonts" / "mulish" / "Mulish-Bold.ttf"
+    if bundled_regular.exists():
+        pdfmetrics.registerFont(TTFont("TrackerMulish", str(bundled_regular)))
+        PDF_FONT = "TrackerMulish"
+    if bundled_bold.exists():
+        pdfmetrics.registerFont(TTFont("TrackerMulishBold", str(bundled_bold)))
+        PDF_FONT_BOLD = "TrackerMulishBold"
+    if bundled_regular.exists():
+        if not bundled_bold.exists():
+            PDF_FONT_BOLD = PDF_FONT
+        return
+
     font_candidates = [
         Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
         Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
