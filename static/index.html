@@ -6,7 +6,7 @@
     <title>Anastasia Che Time Tracker</title>
     <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
-    <link rel="stylesheet" href="/static/styles.css?v=20260620-sort">
+    <link rel="stylesheet" href="/static/styles.css?v=20260622-dashboard-filter">
   </head>
   <body>
     <div id="app">
@@ -172,12 +172,6 @@
         </section>
 
         <section id="dashboard" class="view">
-          <div class="summary-grid dashboard-summary">
-            <div class="metric-card"><span>Клиентов</span><strong id="dashClients">0</strong></div>
-            <div class="metric-card"><span>Проектов</span><strong id="dashProjects">0</strong></div>
-            <div class="metric-card"><span>Записей</span><strong id="dashEntries">0</strong></div>
-          </div>
-
           <div class="dashboard-toolbar">
             <label class="filter-field dashboard-date-field">Период
               <details id="dashboardDateRangeSelect" class="date-range-select">
@@ -197,6 +191,12 @@
                 </div>
               </details>
             </label>
+          </div>
+
+          <div class="summary-grid dashboard-summary">
+            <div class="metric-card"><span>Клиентов</span><strong id="dashClients">0</strong></div>
+            <div class="metric-card"><span>Проектов</span><strong id="dashProjects">0</strong></div>
+            <div class="metric-card"><span>Записей</span><strong id="dashEntries">0</strong></div>
           </div>
 
           <div class="dashboard-hero">
