@@ -300,10 +300,21 @@ schtasks /Delete /TN "Time Tracker Server" /F
 
 ## Chrome extension
 
-Папка `chrome-extension/` содержит локальное расширение для Chrome. Расширение работает вместе с локальным сервером, поэтому сначала запустите приложение:
+Папка `chrome-extension/` содержит локальное расширение для Chrome. Расширение работает вместе с локальным сервером, поэтому сначала запустите приложение.
+
+macOS:
 
 ```bash
 cd /ваш/путь/до/папки/time-tracker
+source .venv/bin/activate
+python app.py
+```
+
+Windows PowerShell:
+
+```powershell
+cd C:\ваш\путь\до\папки\time-tracker
+.\.venv\Scripts\Activate.ps1
 python app.py
 ```
 
