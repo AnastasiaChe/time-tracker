@@ -172,6 +172,101 @@ python app.py --seed-demo
 
 Команда `--seed-demo` не очищает вашу базу. Она добавляет демо-клиента, два проекта и несколько записей, если таких записей еще нет.
 
+## Автозапуск сервера
+
+Автозапуск нужен, если вы хотите, чтобы локальный сервер стартовал сам после входа в систему. Браузер при этом не открывается автоматически: приложение будет доступно по адресу `http://127.0.0.1:8000`.
+
+### macOS
+
+1. Убедитесь, что проект уже установлен, зависимости поставлены, а виртуальное окружение `.venv` создано.
+
+2. Создайте файл автозапуска:
+
+   ```bash
+   nano ~/Library/LaunchAgents/com.time-tracker.server.plist
+   ```
+
+3. Вставьте в файл текст ниже. Замените `/ваш/путь/до/папки/time-tracker` на реальный путь к папке проекта:
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key>
+     <string>com.time-tracker.server</string>
+     <key>ProgramArguments</key>
+     <array>
+       <string>/ваш/путь/до/папки/time-tracker/.venv/bin/python</string>
+       <string>/ваш/путь/до/папки/time-tracker/app.py</string>
+       <string>8000</string>
+     </array>
+     <key>WorkingDirectory</key>
+     <string>/ваш/путь/до/папки/time-tracker</string>
+     <key>RunAtLoad</key>
+     <true/>
+     <key>KeepAlive</key>
+     <true/>
+     <key>StandardOutPath</key>
+     <string>/tmp/time-tracker.log</string>
+     <key>StandardErrorPath</key>
+     <string>/tmp/time-tracker-error.log</string>
+   </dict>
+   </plist>
+   ```
+
+4. Сохраните файл: `Ctrl+O`, `Enter`, потом `Ctrl+X`.
+
+5. Включите автозапуск:
+
+   ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.time-tracker.server.plist
+   launchctl kickstart -k gui/$(id -u)/com.time-tracker.server
+   ```
+
+6. Проверьте в браузере:
+
+   ```text
+   http://127.0.0.1:8000
+   ```
+
+Отключить автозапуск на macOS:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.time-tracker.server.plist
+rm ~/Library/LaunchAgents/com.time-tracker.server.plist
+```
+
+### Windows
+
+1. Убедитесь, что проект уже установлен, зависимости поставлены, а виртуальное окружение `.venv` создано.
+
+2. Откройте PowerShell.
+
+3. Создайте задачу автозапуска. Замените `C:\ваш\путь\до\папки\time-tracker` на реальный путь к папке проекта:
+
+   ```powershell
+   schtasks /Create /TN "Time Tracker Server" /SC ONLOGON /TR "`"C:\ваш\путь\до\папки\time-tracker\.venv\Scripts\python.exe`" `"C:\ваш\путь\до\папки\time-tracker\app.py`" 8000" /F
+   ```
+
+4. Запустите задачу сразу, не дожидаясь следующего входа в систему:
+
+   ```powershell
+   schtasks /Run /TN "Time Tracker Server"
+   ```
+
+5. Проверьте в браузере:
+
+   ```text
+   http://127.0.0.1:8000
+   ```
+
+Отключить автозапуск на Windows:
+
+```powershell
+schtasks /Delete /TN "Time Tracker Server" /F
+```
+
 ## Где лежат данные
 
 - Основная база: `data/time_tracker.sqlite3`
