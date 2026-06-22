@@ -34,6 +34,7 @@
    ```
 
    Если Python не установлен, поставьте его с [python.org](https://www.python.org/downloads/macos/).
+   Если команда показывает Python 3.9, поставьте Python 3.12 и используйте команду `python3.12`.
 
 2. Скачайте проект одним из способов.
 
@@ -54,7 +55,7 @@
 4. Создайте виртуальное окружение:
 
    ```bash
-   python3 -m venv .venv
+   python3.12 -m venv .venv
    source .venv/bin/activate
    ```
 
@@ -171,6 +172,19 @@ python app.py --seed-demo
 ```
 
 Команда `--seed-demo` не очищает вашу базу. Она добавляет демо-клиента, два проекта и несколько записей, если таких записей еще нет.
+
+## Если запуск не сработал
+
+Ошибка `source: no such file or directory: .venv/bin/activate` означает, что виртуальное окружение еще не создано. Перейдите в папку проекта и выполните:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+Ошибка `zsh: command not found: python` на macOS обычно означает, что виртуальное окружение не активировалось. После успешной команды `source .venv/bin/activate` команда `python` появится.
 
 ## Автозапуск сервера
 
