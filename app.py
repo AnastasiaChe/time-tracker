@@ -553,6 +553,20 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
     <title>{html.escape(settings["company_name"])} · {html.escape(print_report_title(query))}</title>
     <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <style>
+      @font-face {{
+        font-family: "Mulish";
+        src: url("/static/vendor/fonts/mulish/Mulish-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }}
+      @font-face {{
+        font-family: "Mulish";
+        src: url("/static/vendor/fonts/mulish/Mulish-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }}
       @page {{ size: A4; margin: 0; }}
       * {{ box-sizing: border-box; }}
       body {{

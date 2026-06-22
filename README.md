@@ -8,7 +8,7 @@
 - Встроенный HTTP-сервер Python
 - SQLite
 - HTML, CSS, JavaScript без сборщика
-- ReportLab для PDF-экспорта
+- ReportLab для внутренней генерации PDF, если используется endpoint экспорта
 - pdfplumber для импорта PDF из Clockify
 - Font Awesome Free, подключен локально
 
@@ -22,7 +22,7 @@
 - Дашборд: часы, активности, разбивка по проектам и клиентам.
 - Печать отчета: A4-страницы с логотипом.
 - Импорт Clockify PDF.
-- Экспорт PDF.
+- Печатная версия отчета из браузера.
 - Настройки брендинга: название компании, горизонтальный логотип интерфейса, квадратный логотип для печатного отчета.
 
 ## Установка на macOS
@@ -198,7 +198,7 @@ python app.py --seed-demo
 Пользователю не нужно отдельно устанавливать шрифты или Font Awesome.
 
 - `Roboto` для интерфейса лежит в `static/vendor/fonts/roboto/`.
-- `Mulish` для печатных отчетов и PDF лежит в `static/vendor/fonts/mulish/`.
+- `Mulish` для печатной версии отчета лежит в `static/vendor/fonts/mulish/`.
 - Font Awesome лежит в `static/vendor/fontawesome/` и `chrome-extension/vendor/fontawesome/`.
 
 Все подключено локально из репозитория, без обращения к Google Fonts или CDN.
