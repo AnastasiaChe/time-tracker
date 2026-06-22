@@ -9,5 +9,8 @@ data/*.sqlite3-*
 *.pdf
 uploads/
 imports/
+!static/uploads/
+static/uploads/*
+!static/uploads/.gitkeep
 
 /Задача/

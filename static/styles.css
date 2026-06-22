@@ -596,6 +596,68 @@ h2 {
   align-items: center;
 }
 
+.settings-panel {
+  max-width: 860px;
+  padding: 16px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(260px, 300px);
+  gap: 16px;
+  align-items: center;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: #fbfdfe;
+}
+
+.settings-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-card p {
+  margin-bottom: 10px;
+}
+
+.settings-copy {
+  min-width: 0;
+}
+
+.settings-control {
+  max-width: 420px;
+}
+
+.logo-setting {
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 300px);
+}
+
+.logo-setting img {
+  width: min(100%, 300px);
+  max-width: 300px;
+  max-height: 118px;
+  object-fit: contain;
+  justify-self: end;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .panel,
 .metric-card {
   min-width: 0;
@@ -1342,8 +1404,14 @@ dialog::backdrop {
   .dashboard-hero,
   .dashboard-split,
   .filter-fieldset,
-  .form-grid {
+  .form-grid,
+  .settings-card,
+  .logo-setting {
     grid-template-columns: 1fr;
+  }
+
+  .logo-setting img {
+    justify-self: start;
   }
 
   .topbar {

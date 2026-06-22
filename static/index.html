@@ -23,6 +23,7 @@
           <button class="nav-item" data-view="reports"><i class="fa-solid fa-table-list"></i><span>Отчеты</span></button>
           <button class="nav-item" data-view="clients"><i class="fa-solid fa-address-book"></i><span>Клиенты</span></button>
           <button class="nav-item" data-view="projects"><i class="fa-solid fa-diagram-project"></i><span>Проекты</span></button>
+          <button class="nav-item" data-view="settings"><i class="fa-solid fa-gear"></i><span>Настройки</span></button>
         </nav>
       </aside>
 
@@ -233,6 +234,49 @@
             </div>
           </div>
         </section>
+
+        <section id="settings" class="view">
+          <div class="panel settings-panel">
+            <div class="panel-head">
+              <h2>Настройки компании</h2>
+              <span id="settingsStatus" class="muted"></span>
+            </div>
+            <form id="settingsForm" class="settings-form">
+              <div class="settings-card">
+                <div class="settings-copy">
+                  <strong>Название компании</strong>
+                  <p class="muted">Показывается в title браузера.</p>
+                </div>
+                <label class="settings-control">Название
+                  <input id="companyName" name="company_name" required maxlength="120" placeholder="Моя компания">
+                </label>
+              </div>
+              <div class="settings-card logo-setting">
+                <div class="settings-copy">
+                  <strong>Горизонтальный логотип</strong>
+                  <p class="muted">Показывается в левом меню интерфейса.</p>
+                  <label class="settings-control">Файл
+                  <input id="interfaceLogo" name="interface_logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml">
+                  </label>
+                </div>
+                <img id="interfaceLogoPreview" src="/static/assets/logo-horizontal.svg" alt="Горизонтальный логотип">
+              </div>
+              <div class="settings-card logo-setting">
+                <div class="settings-copy">
+                  <strong>Квадратный логотип</strong>
+                  <p class="muted">Используется в печатном отчете.</p>
+                  <label class="settings-control">Файл
+                  <input id="reportLogo" name="report_logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml">
+                  </label>
+                </div>
+                <img id="reportLogoPreview" src="/static/assets/logo-vertical.svg" alt="Логотип отчета">
+              </div>
+              <div class="settings-actions">
+                <button type="submit"><i class="fa-solid fa-floppy-disk"></i> Сохранить настройки</button>
+              </div>
+            </form>
+          </div>
+        </section>
       </main>
     </div>
     <dialog id="entryDialog">
@@ -285,6 +329,6 @@
       </form>
     </dialog>
 
-    <script src="/static/app.js?v=20260621-calendar-today"></script>
+    <script src="/static/app.js?v=20260622-settings"></script>
   </body>
 </html>

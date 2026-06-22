@@ -5,6 +5,11 @@ const state = {
   tags: [],
   totals: { duration: "00:00:00", amounts: {} },
   currencies: { RUB: "₽", USD: "$", CAD: "C$" },
+  settings: {
+    company_name: "Anastasia Che Time Tracker",
+    interface_logo: "/static/assets/logo-horizontal.svg",
+    report_logo: "/static/assets/logo-vertical.svg",
+  },
   view: "tracker",
   running: null,
   filters: {},
@@ -19,7 +24,6 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, "0");
-const BASE_TITLE = document.title;
 const toLocalInput = (date) => {
   const d = new Date(date);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -285,11 +289,12 @@ function setView(view) {
   state.view = view;
   document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active-view", el.id === view));
   document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-  $("viewTitle").textContent = { tracker: "Трекер", reports: "Отчеты", clients: "Клиенты", projects: "Проекты", dashboard: "Дашборд" }[view];
+  $("viewTitle").textContent = { tracker: "Трекер", reports: "Отчеты", clients: "Клиенты", projects: "Проекты", dashboard: "Дашборд", settings: "Настройки" }[view];
   if (view === "reports" || hasActiveFilters()) writeFiltersToUrl(true);
 }
 
 function render() {
+  renderBranding();
   setView(state.view);
   renderSelects();
   renderTimer();
@@ -297,7 +302,23 @@ function render() {
   renderClients();
   renderProjects();
   renderDashboard();
+  renderSettings();
   renderSortHeaders();
+}
+
+function renderBranding() {
+  const settings = state.settings || {};
+  const companyName = appTitle();
+  if (!state.running) document.title = companyName;
+  const brand = document.querySelector(".brand");
+  if (brand) {
+    brand.src = settings.interface_logo || "/static/assets/logo-horizontal.svg";
+    brand.alt = companyName;
+  }
+}
+
+function appTitle() {
+  return state.settings?.company_name || "Time Tracker";
 }
 
 function renderSelects() {
@@ -460,7 +481,7 @@ function renderTimer() {
     $("timerClock").textContent = "00:00:00";
     $("runningStatus").textContent = "Счетчик остановлен";
     $("runningMeta").textContent = "Нажми «Старт», детали можно заполнить уже после запуска.";
-    document.title = BASE_TITLE;
+    document.title = appTitle();
     return;
   }
   const project = state.projects.find((p) => String(p.id) === String(state.running.project_id));
@@ -472,13 +493,13 @@ function renderTimer() {
 
 function tickTimer() {
   if (!state.running) {
-    document.title = BASE_TITLE;
+    document.title = appTitle();
     return;
   }
   const seconds = (Date.now() - new Date(state.running.start_at).getTime()) / 1000;
   const duration = durationFromSeconds(seconds);
   $("timerClock").textContent = duration;
-  document.title = `${duration} · ${BASE_TITLE}`;
+  document.title = `${duration} · ${appTitle()}`;
 }
 
 function renderEntries() {
@@ -760,6 +781,15 @@ function renderDashboard() {
   renderDashboardActivities(entries, totalSeconds);
 }
 
+function renderSettings() {
+  const settings = state.settings || {};
+  $("companyName").value = settings.company_name || "";
+  $("interfaceLogoPreview").src = settings.interface_logo || "/static/assets/logo-horizontal.svg";
+  $("interfaceLogoPreview").alt = `${settings.company_name || "Компания"}: горизонтальный логотип`;
+  $("reportLogoPreview").src = settings.report_logo || "/static/assets/logo-vertical.svg";
+  $("reportLogoPreview").alt = `${settings.company_name || "Компания"}: логотип отчета`;
+}
+
 function openEntryDialog(entry = null, defaults = {}) {
   $("entryDialogTitle").textContent = entry ? "Редактировать запись" : "Time entry";
   $("entryId").value = entry?.id || "";
@@ -859,6 +889,21 @@ async function saveProject(event) {
   await api(id ? `/api/projects/${id}` : "/api/projects", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
   $("projectDialog").close();
   await loadState();
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const form = new FormData($("settingsForm"));
+  const result = await api("/api/settings", { method: "POST", body: form });
+  state.settings = result.settings;
+  $("interfaceLogo").value = "";
+  $("reportLogo").value = "";
+  $("settingsStatus").textContent = "Сохранено";
+  renderBranding();
+  renderSettings();
+  window.setTimeout(() => {
+    $("settingsStatus").textContent = "";
+  }, 2500);
 }
 
 async function startTimer(defaults = {}) {
@@ -1186,7 +1231,18 @@ document.querySelectorAll("[data-close]").forEach((button) => {
 $("entryForm").addEventListener("submit", saveEntry);
 $("clientForm").addEventListener("submit", saveClient);
 $("projectForm").addEventListener("submit", saveProject);
+$("settingsForm").addEventListener("submit", saveSettings);
 $("printForm").addEventListener("submit", syncPrintForm);
+
+$("interfaceLogo").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) $("interfaceLogoPreview").src = URL.createObjectURL(file);
+});
+
+$("reportLogo").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) $("reportLogoPreview").src = URL.createObjectURL(file);
+});
 
 $("importPdf").addEventListener("change", async (event) => {
   const file = event.target.files[0];

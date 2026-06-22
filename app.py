@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import cgi
 import html
 import json
 import re
 import sqlite3
-import sys
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +26,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 ROOT = Path(__file__).parent.resolve()
 DB_PATH = ROOT / "data" / "time_tracker.sqlite3"
 STATIC_DIR = ROOT / "static"
+UPLOAD_DIR = STATIC_DIR / "uploads"
 DATE_FMT = "%Y-%m-%dT%H:%M"
 DATE_SECONDS_FMT = "%Y-%m-%dT%H:%M:%S"
 CURRENCIES = {"RUB": "₽", "USD": "$", "CAD": "C$"}
@@ -33,6 +34,12 @@ PDF_CURRENCIES = {"RUB": "RUB", "USD": "$", "CAD": "CAD"}
 PDF_FONT = "Helvetica"
 PDF_FONT_BOLD = "Helvetica-Bold"
 UNTAGGED_FILTER = "__untagged__"
+SETTINGS_DEFAULTS = {
+    "company_name": "Anastasia Che Time Tracker",
+    "interface_logo": "/static/assets/logo-horizontal.svg",
+    "report_logo": "/static/assets/logo-vertical.svg",
+}
+UPLOAD_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 
 
 def register_pdf_fonts() -> None:
@@ -109,8 +116,18 @@ def init_db() -> None:
                 start_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
+        for key, value in SETTINGS_DEFAULTS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, value),
+            )
 
 
 def row_to_dict(row: sqlite3.Row) -> dict:
@@ -225,6 +242,56 @@ def clean_tags(tags: str | list[str]) -> str:
             seen.add(clean.lower())
             result.append(clean)
     return ", ".join(result)
+
+
+def get_settings() -> dict[str, str]:
+    settings = dict(SETTINGS_DEFAULTS)
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    settings.update({row["key"]: row["value"] for row in rows if row["key"] in settings})
+    settings["company_name"] = settings["company_name"].strip() or SETTINGS_DEFAULTS["company_name"]
+    return settings
+
+
+def save_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
+    if key not in SETTINGS_DEFAULTS:
+        return
+    conn.execute(
+        """
+        INSERT INTO settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        (key, value),
+    )
+
+
+def save_uploaded_logo(field: cgi.FieldStorage, name: str) -> str | None:
+    filename = Path(getattr(field, "filename", "") or "")
+    suffix = filename.suffix.lower()
+    if suffix not in UPLOAD_EXTENSIONS:
+        raise ValueError("Логотип должен быть PNG, JPG, WEBP или SVG.")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    target = UPLOAD_DIR / f"{name}{suffix}"
+    with target.open("wb") as file:
+        file.write(field.file.read())
+    return f"/static/uploads/{target.name}"
+
+
+def save_settings_form(handler: SimpleHTTPRequestHandler) -> dict[str, str]:
+    form = cgi.FieldStorage(fp=handler.rfile, headers=handler.headers, environ={"REQUEST_METHOD": "POST"})
+    company_name = str(form.getfirst("company_name") or "").strip()
+    if not company_name:
+        raise ValueError("Название компании не может быть пустым.")
+    with connect() as conn:
+        save_setting(conn, "company_name", company_name)
+        for field_name, setting_key in (
+            ("interface_logo", "interface_logo"),
+            ("report_logo", "report_logo"),
+        ):
+            file_item = form[field_name] if field_name in form else None
+            if file_item is not None and getattr(file_item, "filename", ""):
+                save_setting(conn, setting_key, save_uploaded_logo(file_item, setting_key))
+    return get_settings()
 
 
 def validate_entry(data: dict) -> tuple[int, int, str, str, str]:
@@ -359,6 +426,7 @@ def report_amounts(total: dict) -> str:
 
 
 def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
+    settings = get_settings()
     total = totals(entries)
     amount_total = report_amounts(total)
     currencies = list(total["amounts"].keys())
@@ -450,7 +518,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
             <strong>{html.escape(amount_total)}</strong>
           </div>
         </div>
-        <img class="logo" src="/static/assets/logo-vertical.svg" alt="Anastasia Che Design">
+        <img class="logo" src="{html.escape(settings["report_logo"])}" alt="{html.escape(settings["company_name"])}">
       </header>
             """
         return f"""
@@ -469,7 +537,7 @@ def build_print_report(entries: list[dict], query: dict[str, list[str]]) -> str:
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{html.escape(print_report_title(query))}</title>
+    <title>{html.escape(settings["company_name"])} · {html.escape(print_report_title(query))}</title>
     <link rel="icon" type="image/png" href="/static/assets/favicon.png">
     <style>
       @page {{ size: A4; margin: 0; }}
@@ -982,6 +1050,7 @@ def import_clockify_pdf(file_bytes: bytes) -> dict:
 
 def build_pdf(entries: list[dict], query: dict[str, list[str]]) -> bytes:
     register_pdf_fonts()
+    settings = get_settings()
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -997,7 +1066,7 @@ def build_pdf(entries: list[dict], query: dict[str, list[str]]) -> bytes:
     small = ParagraphStyle("Small", parent=normal, fontName=PDF_FONT, fontSize=8, leading=10)
     title = ParagraphStyle("Title", parent=styles["Title"], fontName=PDF_FONT_BOLD, fontSize=18, leading=22, textColor=colors.HexColor("#111827"))
     story = []
-    story.append(Paragraph("Anastasia Che", title))
+    story.append(Paragraph(settings["company_name"], title))
     story.append(Paragraph("Time report", normal))
     period = f"{query.get('from', ['...'])[0] or '...'} - {query.get('to', ['...'])[0] or '...'}"
     total = totals(entries)
@@ -1087,6 +1156,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "totals": totals(entries),
                         "currencies": CURRENCIES,
                         "running": get_running_timer(),
+                        "settings": get_settings(),
                     },
                 )
             if path == "/api/export.pdf":
@@ -1181,6 +1251,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if file_item is None or not getattr(file_item, "file", None):
                     return bad_request(self, "PDF-файл не найден.")
                 return send_json(self, import_clockify_pdf(file_item.file.read()))
+            if parsed.path == "/api/settings":
+                return send_json(self, {"settings": save_settings_form(self)})
             bad_request(self, "Unknown endpoint", 404)
         except sqlite3.IntegrityError as exc:
             bad_request(self, f"Конфликт данных: {exc}")
@@ -1250,11 +1322,57 @@ class Handler(SimpleHTTPRequestHandler):
         send_json(self, {"ok": True})
 
 
-def main() -> None:
+def seed_demo_data() -> dict[str, int]:
     init_db()
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"Time tracker is running at http://127.0.0.1:{port}")
+    with connect() as conn:
+        client_id = upsert_client(conn, "Демо-клиент: Студия Север", "RUB")
+        project_design = upsert_project(conn, client_id, "Редизайн сайта", "3500", "RUB")
+        project_support = upsert_project(conn, client_id, "Поддержка интерфейса", "2500", "RUB")
+        rows = [
+            (project_design, "Аудит главной страницы", "ux, audit", "2026-06-15T10:00:00", "2026-06-15T12:35:00"),
+            (project_design, "Прототип личного кабинета", "prototype, design", "2026-06-16T14:10:00", "2026-06-16T17:40:00"),
+            (project_support, "Правки таблицы отчетов", "support", "2026-06-17T11:20:00", "2026-06-17T12:30:00"),
+            (project_design, "Подготовка PDF-отчета", "report", "2026-06-18T09:30:00", "2026-06-18T11:00:00"),
+            (project_support, "Созвон и планирование", "meeting", "2026-06-19T16:00:00", "2026-06-19T17:15:00"),
+        ]
+        inserted = 0
+        for project_id, description, tags, start_at, end_at in rows:
+            duplicate = conn.execute(
+                """
+                SELECT id FROM time_entries
+                WHERE client_id=? AND project_id=? AND description=? AND start_at=? AND end_at=?
+                """,
+                (client_id, project_id, description, start_at, end_at),
+            ).fetchone()
+            if duplicate:
+                continue
+            conn.execute(
+                """
+                INSERT INTO time_entries (client_id, project_id, description, tags, start_at, end_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (client_id, project_id, description, tags, start_at, end_at),
+            )
+            inserted += 1
+    return {"client_id": client_id, "inserted_entries": inserted}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Локальный трекер времени.")
+    parser.add_argument("port", nargs="?", type=int, default=8000, help="Порт веб-сервера. По умолчанию: 8000.")
+    parser.add_argument("--host", default="127.0.0.1", help="Адрес сервера. По умолчанию: 127.0.0.1.")
+    parser.add_argument("--seed-demo", action="store_true", help="Добавить демо-клиента, проекты и записи в локальную базу.")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    init_db()
+    if args.seed_demo:
+        result = seed_demo_data()
+        print(f"Демо-данные готовы: клиент #{result['client_id']}, новых записей: {result['inserted_entries']}")
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Time tracker is running at http://{args.host}:{args.port}")
     server.serve_forever()
 
 
